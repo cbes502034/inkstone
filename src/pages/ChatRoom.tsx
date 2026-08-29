@@ -6,12 +6,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Avatar, AvatarStack } from '../components/Avatar'
 import { Skeleton } from '../components/ui'
 import { chat } from '../lib/api'
-import { presenceText, usePresenceMap } from '../lib/presence'
+import { presenceText } from '../lib/presence'
 import { clockTime, dayLabel } from '../lib/time'
+import { useAuth } from '../store/auth'
 import type { Message } from '../types'
 
 export function ChatRoom() {
   const { id = '' } = useParams()
+  const { user: me } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
@@ -46,12 +48,12 @@ export function ChatRoom() {
     send.mutate(text)
   }
 
-  const others = conv?.members.filter((m) => m.id !== 'u_me') ?? []
+  // 濾掉自己，留下的才是對方
+  const others = conv?.members.filter((m) => m.id !== me?.id) ?? []
 
-  // 一對一看對方的狀態；群組數有幾個人在線
-  const presenceMap = usePresenceMap()
-  const peerPresence = presenceMap[others[0]?.id ?? ''] ?? 'offline'
-  const onlineInGroup = others.filter((m) => presenceMap[m.id] === 'online').length
+  // 狀態跟著成員資料從後端來
+  const peerPresence = others[0]?.presence ?? 'offline'
+  const onlineInGroup = others.filter((m) => m.presence === 'online').length
 
   return (
     <div className="flex h-dvh flex-col">

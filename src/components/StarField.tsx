@@ -56,10 +56,15 @@ export function StarField() {
   const { isDark } = useTheme()
 
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const el = canvasRef.current
+    if (!el) return
+    // 同上：下面的函式宣告拿不到 guard 的收斂結果，重綁一個非 null 的 const
+    const canvas: HTMLCanvasElement = el
+    const context = canvas.getContext('2d')
+    if (!context) return
+    // 重新綁一個確定非 null 的 const —— 底下的函式宣告會被提升，
+    // TypeScript 不會把上面那個 guard 的收斂結果帶進去
+    const ctx: CanvasRenderingContext2D = context
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
@@ -127,6 +132,17 @@ export function StarField() {
 
     function build() {
       const rect = canvas.getBoundingClientRect()
+
+      // 分頁在背景、元素還沒排版完、視窗最小化時尺寸會是 0。
+      // 這時候建立畫布會產生 0x0 的貼圖，drawImage 會直接拋 InvalidStateError。
+      if (rect.width < 1 || rect.height < 1) {
+        width = 0
+        height = 0
+        dust = null
+        glows = []
+        return
+      }
+
       dpr = Math.min(window.devicePixelRatio || 1, 2)
       width = rect.width
       height = rect.height
@@ -190,6 +206,12 @@ export function StarField() {
     let dustOffset = 0
 
     function draw(now: number) {
+      // 尺寸還是 0 就先不畫，等 ResizeObserver 通知有尺寸了再重建
+      if (width < 1 || height < 1) {
+        if (running) raf = requestAnimationFrame(draw)
+        return
+      }
+
       ctx.clearRect(0, 0, width, height)
       ctx.globalCompositeOperation = 'lighter'
 
@@ -272,6 +294,10 @@ export function StarField() {
     }
     window.addEventListener('resize', onResize)
 
+    // window 的 resize 事件抓不到「元素從 0 尺寸變成有尺寸」這種情況
+    const observer = new ResizeObserver(onResize)
+    observer.observe(canvas)
+
     const onVisibility = () => {
       if (document.hidden) {
         running = false
@@ -287,6 +313,7 @@ export function StarField() {
       running = false
       cancelAnimationFrame(raf)
       window.clearTimeout(resizeTimer)
+      observer.disconnect()
       window.removeEventListener('resize', onResize)
       document.removeEventListener('visibilitychange', onVisibility)
     }

@@ -13,7 +13,8 @@ export function PostCard({ post }: { post: Post }) {
   const qc = useQueryClient()
 
   const like = useMutation({
-    mutationFn: () => posts.toggleLike(post.id),
+    // 後端按讚與取消是兩支各自冪等的端點，這裡帶入「要變成什麼狀態」
+    mutationFn: () => posts.setLike(post.id, !post.likedByMe),
     // 樂觀更新 —— 點下去畫面立刻反應，不等 API 回來
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ['feed'] })

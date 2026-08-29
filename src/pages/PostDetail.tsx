@@ -30,7 +30,7 @@ export function PostDetail() {
   })
 
   const like = useMutation({
-    mutationFn: () => posts.toggleLike(id),
+    mutationFn: () => posts.setLike(id, !post?.likedByMe),
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ['post', id] })
       const prev = qc.getQueryData(['post', id])

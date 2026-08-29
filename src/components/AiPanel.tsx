@@ -44,9 +44,15 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const isWide = useIsWide()
 
+  // 同一次寫作的多輪對話共用一個 session，關閉面板時拿它去後端清掉暫存
+  const [sessionId, setSessionId] = useState<string | null>(null)
+
   const send = useMutation({
-    mutationFn: (prompt: string) => ai.compose(prompt, turns),
-    onSuccess: (reply) => setTurns((t) => [...t, reply]),
+    mutationFn: (prompt: string) => ai.compose(prompt, sessionId),
+    onSuccess: (reply) => {
+      if (reply.sessionId) setSessionId(reply.sessionId)
+      setTurns((t) => [...t, reply])
+    },
   })
 
   useEffect(() => {
@@ -69,17 +75,23 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
     send.mutate(text)
   }
 
-  /** 採用草稿 —— 關閉面板並清空暫存，符合「滿意即結束」的設計 */
-  const accept = (draft: { title: string; body: string }) => {
-    onAccept(draft)
+  /** 結束這次對話：本機清空，後端的暫存也一併刪掉，不留紀錄 */
+  const reset = () => {
+    if (sessionId) ai.endSession(sessionId).catch(() => {})
+    setSessionId(null)
     setTurns([])
     setInput('')
   }
 
+  /** 採用草稿 —— 關閉面板並清空暫存，符合「滿意即結束」的設計 */
+  const accept = (draft: { title: string; body: string }) => {
+    onAccept(draft)
+    reset()
+  }
+
   const close = () => {
     onClose()
-    setTurns([])
-    setInput('')
+    reset()
   }
 
   return (

@@ -148,6 +148,8 @@ export interface AiTurn {
   /** 產出的草稿，使用者按「就是這個」時帶回編輯器 */
   draft?: { title: string; body: string }
   createdAt: string
+  /** 後端用來對應 Redis 裡的暫存；關閉面板時拿它去清除 */
+  sessionId?: string
 }
 
 /** 分頁 — 游標式，配合無限捲動 */

@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Check, Clock, MessageCircle, UserPlus } from 'lucide-react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
 import { Button, EmptyState, FadeIn, PostSkeleton, Skeleton } from '../components/ui'
 import { chat, friends, posts } from '../lib/api'
-import { presenceText, usePresence } from '../lib/presence'
+import { presenceText } from '../lib/presence'
 import { absoluteDate } from '../lib/time'
 
 /**
@@ -24,11 +24,11 @@ export function UserProfile() {
     queryFn: () => friends.profile(username),
   })
 
-  const state = usePresence(user?.id)
+  const state = user?.presence ?? 'offline'
 
   const { data: theirPosts } = useQuery({
     queryKey: ['posts', 'author', user?.id],
-    queryFn: () => posts.byAuthor(user!.id),
+    queryFn: () => posts.byAuthor(user!.username),
     enabled: Boolean(user),
   })
 

@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { Button, EmptyState, PageTitle, Skeleton } from '../components/ui'
 import { chat, friends } from '../lib/api'
-import { presenceText, usePresence } from '../lib/presence'
+import { presenceText } from '../lib/presence'
 import type { UserPublic } from '../types'
 
 type Tab = 'list' | 'requests' | 'find'
@@ -172,7 +172,7 @@ export function Friends() {
 
 function FriendRow({ user }: { user: UserPublic }) {
   const navigate = useNavigate()
-  const state = usePresence(user.id)
+  const state = user.presence
   const open = useMutation({
     mutationFn: () => chat.openDirect(user.id),
     onSuccess: (conv) => navigate(`/chat/${conv.id}`),

@@ -16,6 +16,7 @@ import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { auth, chat, notifications } from '../lib/api'
+import { useHeartbeat } from '../lib/presence'
 import { useTheme } from '../lib/theme'
 import { useAuth } from '../store/auth'
 import { Avatar } from './Avatar'
@@ -70,6 +71,9 @@ export function AppShell() {
   useEffect(() => {
     if (fresh) patchUser(fresh)
   }, [fresh, patchUser])
+
+  // 維持自己的上線狀態
+  useHeartbeat()
 
   const { data: convs } = useQuery({
     queryKey: ['conversations'],

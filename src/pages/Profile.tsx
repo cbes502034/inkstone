@@ -24,7 +24,7 @@ export function Profile() {
 
   const { data: myPosts, isLoading } = useQuery({
     queryKey: ['posts', 'mine', user?.id],
-    queryFn: () => posts.byAuthor(user!.id),
+    queryFn: () => posts.byAuthor(user!.username),
     enabled: Boolean(user),
   })
 

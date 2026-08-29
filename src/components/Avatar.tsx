@@ -1,9 +1,15 @@
 import { avatarSrc } from '../lib/avatar'
-import { presenceLabel, usePresence } from '../lib/presence'
+import { presenceLabel } from '../lib/presence'
 import type { Presence } from '../types'
 
 interface Props {
-  user: { id: string; displayName: string; avatarUrl: string | null }
+  /** 狀態跟著使用者物件一起從後端來，前端不自己推算 */
+  user: {
+    id: string
+    displayName: string
+    avatarUrl: string | null
+    presence?: Presence
+  }
   size?: number
   /** 顯示上線狀態圓點。列表、聊天、個人頁用得到；文章內文就不必了 */
   showPresence?: boolean
@@ -17,7 +23,7 @@ const DOT_COLOR: Record<Presence, string> = {
 }
 
 export function Avatar({ user, size = 40, showPresence = false, className = '' }: Props) {
-  const presence = usePresence(showPresence ? user.id : undefined)
+  const presence: Presence = user.presence ?? 'offline'
 
   // 圓點隨頭像等比縮放，小頭像上才不會顯得笨重
   const dot = Math.max(8, Math.round(size * 0.27))

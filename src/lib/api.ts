@@ -1,9 +1,8 @@
 /**
  * API 客戶端。
  *
- * 目前接的是本機 mock，但每一支函式都對應一個真實的 RESTful 端點
- * （註解裡的 HTTP 動詞 + 路徑就是後端要實作的規格）。
- * 後端完成後，只要把這個檔案的內部實作換成 fetch，頁面一行都不用改。
+ * 直接對應後端的 RESTful 端點。當初把這層抽出來就是為了這一刻 ——
+ * 從 mock 換成真後端，頁面元件一行都不用改。
  */
 
 import type {
@@ -20,562 +19,282 @@ import type {
   UserPublic,
   UserWithRelation,
 } from '../types'
-import { extractTags } from './markup'
-import {
-  COMMENTS,
-  CONVERSATIONS,
-  LIKES,
-  ME,
-  MESSAGES,
-  NOTIFICATIONS,
-  POSTS,
-  RELATIONS,
-  USERS,
-  userById,
-} from './mock/seed'
+import { http } from './http'
 
-/** 模擬網路延遲，讓 loading / 骨架屏 的行為跟真實情況一致 */
-const delay = (ms = 260) => new Promise((r) => setTimeout(r, ms))
-
-const uid = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 9)}`
-
-const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
-
-/** 依刊登日期新到舊 —— 編輯不改變 createdAt，所以排序不會因為編輯而跳動 */
-const byNewest = (a: Post, b: Post) =>
-  new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-
-const PAGE_SIZE = 4
+export { ApiError } from './http'
 
 // ================================================================ 身分驗證
-// JWT：access token 短效，refresh token 換新的 access token。
 
 export const auth = {
-  /** POST /api/v1/auth/register  （multipart，可夾帶頭像） */
-  async register(input: {
+  /** POST /auth/register */
+  register(input: {
     username: string
     displayName: string
     email: string
     password: string
     avatarDataUrl?: string | null
   }): Promise<AuthSession> {
-    await delay(700)
-    if (USERS.some((u) => u.username === input.username)) {
-      throw new ApiError(409, '這個帳號已經有人用了')
-    }
-    const now = new Date().toISOString()
-    const user: UserPrivate = {
-      id: uid('u'),
-      username: input.username,
-      displayName: input.displayName,
-      avatarUrl: input.avatarDataUrl ?? null,
-      bio: '',
-      email: input.email,
-      emailVerified: false,
-      createdAt: now,
-      presence: 'online',
-      lastSeenAt: now,
-      showPresence: true,
-    }
-    return { accessToken: uid('at'), refreshToken: uid('rt'), user }
+    return http.post<AuthSession>('/auth/register', input)
   },
 
-  /** POST /api/v1/auth/login */
-  async login(_input: { account: string; password: string }): Promise<AuthSession> {
-    await delay(600)
-    return { accessToken: uid('at'), refreshToken: uid('rt'), user: clone(ME) }
+  /** POST /auth/login */
+  login(input: { account: string; password: string }): Promise<AuthSession> {
+    return http.post<AuthSession>('/auth/login', input)
   },
 
-  /** POST /api/v1/auth/logout */
-  async logout(): Promise<void> {
-    await delay(150)
+  /** POST /auth/logout */
+  logout(): Promise<void> {
+    return http.post<void>('/auth/logout')
   },
 
-  /** GET /api/v1/users/me —— 只有本人拿得到 email 等私密欄位 */
-  async me(): Promise<UserPrivate> {
-    await delay(200)
-    return clone(ME)
+  /** GET /users/me —— 只有本人拿得到 email 等私密欄位 */
+  me(): Promise<UserPrivate> {
+    return http.get<UserPrivate>('/users/me')
   },
 
-  /** PATCH /api/v1/users/me */
-  async updateMe(
+  /** PATCH /users/me */
+  updateMe(
     patch: Partial<
       Pick<UserPrivate, 'displayName' | 'bio' | 'avatarUrl' | 'showPresence'>
     >,
-  ) {
-    await delay(500)
-    Object.assign(ME, patch)
-    return clone(ME)
+  ): Promise<UserPrivate> {
+    return http.patch<UserPrivate>('/users/me', patch)
   },
-}
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message)
-  }
+  /** POST /users/me/heartbeat —— 維持上線狀態 */
+  heartbeat(): Promise<void> {
+    return http.post<void>('/users/me/heartbeat')
+  },
 }
 
 // ================================================================ 貼文
 
 export const posts = {
-  /** GET /api/v1/posts?cursor=&limit= —— 動態牆，刊登日期新到舊 */
-  async feed(cursor?: string | null): Promise<Page<Post>> {
-    await delay()
-    const sorted = [...POSTS].sort(byNewest)
-    const start = cursor ? sorted.findIndex((p) => p.id === cursor) + 1 : 0
-    const items = sorted.slice(start, start + PAGE_SIZE)
-    const next = start + PAGE_SIZE < sorted.length ? items[items.length - 1]?.id : null
-    return { items: clone(items), nextCursor: next ?? null }
+  /** GET /posts?cursor= */
+  feed(cursor?: string | null): Promise<Page<Post>> {
+    return http.get<Page<Post>>('/posts', { cursor: cursor ?? undefined })
   },
 
-  /** GET /api/v1/users/{id}/posts */
-  async byAuthor(authorId: ID): Promise<Post[]> {
-    await delay()
-    return clone(POSTS.filter((p) => p.author.id === authorId).sort(byNewest))
+  /** GET /users/{username}/posts */
+  byAuthor(username: string): Promise<Post[]> {
+    return http.get<Post[]>(`/users/${encodeURIComponent(username)}/posts`)
   },
 
-  /** GET /api/v1/posts/{id} */
-  async get(id: ID): Promise<Post> {
-    await delay(200)
-    const post = POSTS.find((p) => p.id === id)
-    if (!post) throw new ApiError(404, '找不到這篇文章')
-    return clone(post)
+  /** GET /posts/{id} */
+  get(id: ID): Promise<Post> {
+    return http.get<Post>(`/posts/${id}`)
   },
 
-  /** POST /api/v1/posts */
-  async create(input: { title: string; body: string }): Promise<Post> {
-    await delay(650)
-    const now = new Date().toISOString()
-    const post: Post = {
-      id: uid('p'),
-      author: clone(ME) as UserPublic,
-      title: input.title.trim(),
-      body: input.body,
-      tags: extractTags(input.body),
-      coverUrl: null,
-      createdAt: now,
-      updatedAt: now,
-      edited: false,
-      likeCount: 0,
-      commentCount: 0,
-      likedByMe: false,
-      isMine: true,
-    }
-    POSTS.unshift(post)
-    return clone(post)
+  /** POST /posts */
+  create(input: { title: string; body: string }): Promise<Post> {
+    return http.post<Post>('/posts', input)
+  },
+
+  /** PATCH /posts/{id} —— 後端會驗擁有者 */
+  update(id: ID, input: { title: string; body: string }): Promise<Post> {
+    return http.patch<Post>(`/posts/${id}`, input)
+  },
+
+  /** DELETE /posts/{id} */
+  remove(id: ID): Promise<void> {
+    return http.del<void>(`/posts/${id}`)
   },
 
   /**
-   * PATCH /api/v1/posts/{id}
-   * 後端必須驗證 owner_id === 目前登入者；只靠前端隱藏編輯鈕擋不住直接打 API。
+   * 按讚／取消。
    *
-   * createdAt 保持不變（排序不跳動、對讀者透明），只更新 updatedAt 並標記 edited。
+   * 後端拆成 PUT 與 DELETE 兩支（各自冪等），比單一 toggle 可靠 ——
+   * toggle 在網路重送時會把狀態翻回去，兩支則重送幾次結果都一樣。
    */
-  async update(id: ID, input: { title: string; body: string }): Promise<Post> {
-    await delay(650)
-    const post = POSTS.find((p) => p.id === id)
-    if (!post) throw new ApiError(404, '找不到這篇文章')
-    if (!post.isMine) throw new ApiError(403, '你只能編輯自己的文章')
-    post.title = input.title.trim()
-    post.body = input.body
-    post.tags = extractTags(input.body)
-    post.updatedAt = new Date().toISOString()
-    post.edited = true
-    return clone(post)
+  setLike(id: ID, liked: boolean): Promise<Pick<Post, 'likeCount' | 'likedByMe'>> {
+    return liked
+      ? http.put<Pick<Post, 'likeCount' | 'likedByMe'>>(`/posts/${id}/like`)
+      : http.del<Pick<Post, 'likeCount' | 'likedByMe'>>(`/posts/${id}/like`)
   },
 
-  /** DELETE /api/v1/posts/{id} */
-  async remove(id: ID): Promise<void> {
-    await delay(400)
-    const i = POSTS.findIndex((p) => p.id === id)
-    if (i >= 0 && POSTS[i].isMine) POSTS.splice(i, 1)
+  /** GET /posts/{id}/likes */
+  likers(id: ID): Promise<{ items: UserPublic[]; total: number }> {
+    return http.get<{ items: UserPublic[]; total: number }>(`/posts/${id}/likes`)
   },
 
-  /** PUT / DELETE /api/v1/posts/{id}/like —— 可取消，冪等 */
-  async toggleLike(id: ID): Promise<Pick<Post, 'likeCount' | 'likedByMe'>> {
-    await delay(180)
-    const post = POSTS.find((p) => p.id === id)!
-    post.likedByMe = !post.likedByMe
-    post.likeCount += post.likedByMe ? 1 : -1
-
-    // 名單要跟著動，不然點開會看不到自己
-    const list = (LIKES[id] ??= [])
-    const at = list.indexOf(ME.id)
-    if (post.likedByMe && at < 0) list.unshift(ME.id)
-    if (!post.likedByMe && at >= 0) list.splice(at, 1)
-
-    return { likeCount: post.likeCount, likedByMe: post.likedByMe }
-  },
-
-  /**
-   * GET /api/v1/posts/{id}/likes —— 誰按了讚
-   *
-   * 熱門文章的讚可能上千，所以只回傳一頁，總數另外給。
-   * 排序把自己和好友放前面 —— 使用者最在意的是「我認識的人有誰按了」。
-   */
-  async likers(id: ID): Promise<{ items: UserPublic[]; total: number }> {
-    await delay(260)
-    const post = POSTS.find((p) => p.id === id)
-    if (!post) throw new ApiError(404, '找不到這篇文章')
-
-    const ids = LIKES[id] ?? []
-    const rank = (uid_: ID) =>
-      uid_ === ME.id ? 0 : RELATIONS[uid_] === 'friends' ? 1 : 2
-
-    const items = ids
-      .map((x) => USERS.find((u) => u.id === x))
-      .filter((u): u is UserPublic => Boolean(u))
-      .sort((a, b) => rank(a.id) - rank(b.id))
-
-    return { items: clone(items), total: post.likeCount }
-  },
-
-  /** GET /api/v1/search?q= —— 標題、內文、標籤、作者一起搜 */
-  async search(q: string): Promise<{ posts: Post[]; users: UserPublic[] }> {
-    await delay(320)
-    const needle = q.trim().toLowerCase()
-    if (!needle) return { posts: [], users: [] }
-    const matched = POSTS.filter((p) => {
-      const hay = `${p.title} ${p.body} ${p.author.displayName}`.toLowerCase()
-      return hay.includes(needle)
-    }).sort(byNewest)
-    const users = USERS.filter(
-      (u) =>
-        u.id !== ME.id &&
-        `${u.displayName} ${u.username}`.toLowerCase().includes(needle),
-    )
-    return { posts: clone(matched), users: clone(users) }
+  /** GET /search?q= */
+  search(q: string): Promise<{ posts: Post[]; users: UserPublic[] }> {
+    if (!q.trim()) return Promise.resolve({ posts: [], users: [] })
+    return http.get<{ posts: Post[]; users: UserPublic[] }>('/search', { q })
   },
 }
 
 // ================================================================ 留言
 
 export const comments = {
-  /** GET /api/v1/posts/{id}/comments */
-  async list(postId: ID): Promise<Comment[]> {
-    await delay(240)
-    const items = COMMENTS.filter((c) => c.postId === postId).sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    )
-    return clone(items)
+  /** GET /posts/{id}/comments */
+  list(postId: ID): Promise<Comment[]> {
+    return http.get<Comment[]>(`/posts/${postId}/comments`)
   },
 
-  /** POST /api/v1/posts/{id}/comments */
-  async create(postId: ID, body: string): Promise<Comment> {
-    await delay(420)
-    const c: Comment = {
-      id: uid('c'),
-      postId,
-      author: clone(ME) as UserPublic,
-      body: body.trim(),
-      createdAt: new Date().toISOString(),
-      isMine: true,
-    }
-    COMMENTS.push(c)
-    const post = POSTS.find((p) => p.id === postId)
-    if (post) post.commentCount += 1
-    return clone(c)
+  /** POST /posts/{id}/comments */
+  create(postId: ID, body: string): Promise<Comment> {
+    return http.post<Comment>(`/posts/${postId}/comments`, { body })
   },
 
-  /** DELETE /api/v1/comments/{id} */
-  async remove(id: ID): Promise<void> {
-    await delay(300)
-    const i = COMMENTS.findIndex((c) => c.id === id)
-    if (i >= 0 && COMMENTS[i].isMine) {
-      const post = POSTS.find((p) => p.id === COMMENTS[i].postId)
-      if (post) post.commentCount -= 1
-      COMMENTS.splice(i, 1)
-    }
+  /** DELETE /comments/{id} */
+  remove(id: ID): Promise<void> {
+    return http.del<void>(`/comments/${id}`)
   },
 }
 
 // ================================================================ 好友
 
 export const friends = {
-  /** GET /api/v1/friends */
-  async list(): Promise<UserPublic[]> {
-    await delay()
-    return clone(USERS.filter((u) => RELATIONS[u.id] === 'friends'))
+  /** GET /friends */
+  list(): Promise<UserPublic[]> {
+    return http.get<UserPublic[]>('/friends')
   },
 
-  /** GET /api/v1/friends/requests —— 收到的邀請 */
-  async incoming(): Promise<UserPublic[]> {
-    await delay(200)
-    return clone(USERS.filter((u) => RELATIONS[u.id] === 'incoming'))
+  /** GET /friends/requests?direction=incoming */
+  incoming(): Promise<UserPublic[]> {
+    return http.get<UserPublic[]>('/friends/requests', { direction: 'incoming' })
   },
 
-  /** GET /api/v1/friends/requests?direction=outgoing */
-  async outgoing(): Promise<UserPublic[]> {
-    await delay(200)
-    return clone(USERS.filter((u) => RELATIONS[u.id] === 'outgoing'))
+  /** GET /friends/requests?direction=outgoing */
+  outgoing(): Promise<UserPublic[]> {
+    return http.get<UserPublic[]>('/friends/requests', { direction: 'outgoing' })
   },
 
-  /** GET /api/v1/users?q= —— 搜尋使用者 */
-  async search(q: string): Promise<UserWithRelation[]> {
-    await delay(300)
-    const needle = q.trim().toLowerCase()
-    if (!needle) return []
-    return USERS.filter(
-      (u) =>
-        u.id !== ME.id &&
-        `${u.displayName} ${u.username}`.toLowerCase().includes(needle),
-    ).map((u) => withRelation(u))
+  /** GET /users?q= */
+  search(q: string): Promise<UserWithRelation[]> {
+    if (!q.trim()) return Promise.resolve([])
+    return http.get<UserWithRelation[]>('/users', { q })
   },
 
-  /** GET /api/v1/users/{username} */
-  async profile(username: string): Promise<UserWithRelation> {
-    await delay(260)
-    const u = USERS.find((x) => x.username === username)
-    if (!u) throw new ApiError(404, '找不到這個人')
-    return withRelation(u)
+  /** GET /users/{username} */
+  profile(username: string): Promise<UserWithRelation> {
+    return http.get<UserWithRelation>(`/users/${encodeURIComponent(username)}`)
   },
 
-  /**
-   * POST /api/v1/friends/requests  { toUserId }
-   * 雙向流程：送出邀請 → 對方接受才成立，不能單方面把人加成好友。
-   */
-  async invite(userId: ID): Promise<void> {
-    await delay(380)
-    RELATIONS[userId] = 'outgoing'
+  /** POST /friends/requests —— 雙向流程，要對方接受才成立 */
+  invite(userId: ID): Promise<void> {
+    return http.post<void>('/friends/requests', undefined, { toUserId: userId })
   },
 
-  /** POST /api/v1/friends/requests/{id}/accept */
-  async accept(userId: ID): Promise<void> {
-    await delay(380)
-    RELATIONS[userId] = 'friends'
+  /** POST /friends/requests/{id}/accept */
+  accept(userId: ID): Promise<void> {
+    return http.post<void>(`/friends/requests/${userId}/accept`)
   },
 
-  /** DELETE /api/v1/friends/requests/{id} —— 拒絕或收回邀請 */
-  async decline(userId: ID): Promise<void> {
-    await delay(320)
-    RELATIONS[userId] = 'none'
+  /** DELETE /friends/requests/{id} —— 拒絕或收回 */
+  decline(userId: ID): Promise<void> {
+    return http.del<void>(`/friends/requests/${userId}`)
   },
 
-  /** DELETE /api/v1/friends/{id} */
-  async remove(userId: ID): Promise<void> {
-    await delay(320)
-    RELATIONS[userId] = 'none'
+  /** DELETE /friends/{id} */
+  remove(userId: ID): Promise<void> {
+    return http.del<void>(`/friends/${userId}`)
   },
-}
 
-function withRelation(u: UserPublic): UserWithRelation {
-  return {
-    ...clone(u),
-    friendState: RELATIONS[u.id] ?? 'none',
-    friendCount: Object.values(RELATIONS).filter((r) => r === 'friends').length,
-    postCount: POSTS.filter((p) => p.author.id === u.id).length,
-  }
+  /** POST /friends/block/{id} */
+  block(userId: ID): Promise<void> {
+    return http.post<void>(`/friends/block/${userId}`)
+  },
+
+  /** DELETE /friends/block/{id} */
+  unblock(userId: ID): Promise<void> {
+    return http.del<void>(`/friends/block/${userId}`)
+  },
 }
 
 // ================================================================ 聊天
-// 真實版本走 WebSocket（Supabase Realtime）推送，REST 只負責取歷史訊息。
 
 export const chat = {
-  /** GET /api/v1/conversations */
-  async conversations(): Promise<Conversation[]> {
-    await delay(240)
-    const sorted = [...CONVERSATIONS].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    )
-    return clone(sorted)
+  /** GET /conversations */
+  conversations(): Promise<Conversation[]> {
+    return http.get<Conversation[]>('/conversations')
   },
 
-  /** GET /api/v1/conversations/{id} */
-  async conversation(id: ID): Promise<Conversation> {
-    await delay(180)
-    const c = CONVERSATIONS.find((x) => x.id === id)
-    if (!c) throw new ApiError(404, '找不到這個對話')
-    c.unreadCount = 0
-    return clone(c)
+  /** GET /conversations/{id} */
+  conversation(id: ID): Promise<Conversation> {
+    return http.get<Conversation>(`/conversations/${id}`)
   },
 
-  /** GET /api/v1/conversations/{id}/messages */
-  async messages(conversationId: ID): Promise<Message[]> {
-    await delay(220)
-    return clone(MESSAGES.filter((m) => m.conversationId === conversationId))
+  /** GET /conversations/{id}/messages */
+  messages(conversationId: ID): Promise<Message[]> {
+    return http.get<Message[]>(`/conversations/${conversationId}/messages`)
   },
 
-  /** POST /api/v1/conversations/{id}/messages */
-  async send(conversationId: ID, body: string): Promise<Message> {
-    await delay(160)
-    const m: Message = {
-      id: uid('m'),
-      conversationId,
-      sender: clone(ME) as UserPublic,
-      body: body.trim(),
-      createdAt: new Date().toISOString(),
-      isMine: true,
-    }
-    MESSAGES.push(m)
-    const conv = CONVERSATIONS.find((c) => c.id === conversationId)
-    if (conv) {
-      conv.lastMessage = m
-      conv.updatedAt = m.createdAt
-    }
-    return clone(m)
+  /** POST /conversations/{id}/messages */
+  send(conversationId: ID, body: string): Promise<Message> {
+    return http.post<Message>(`/conversations/${conversationId}/messages`, { body })
   },
 
-  /** POST /api/v1/conversations  { kind:'group', name, memberIds } */
-  async createGroup(name: string, memberIds: ID[]): Promise<Conversation> {
-    await delay(520)
-    const conv: Conversation = {
-      id: uid('cv'),
-      kind: 'group',
-      name: name.trim(),
-      avatarUrl: null,
-      members: [ME as UserPublic, ...memberIds.map(userById)],
-      ownerId: ME.id,
-      lastMessage: null,
-      unreadCount: 0,
-      updatedAt: new Date().toISOString(),
-    }
-    CONVERSATIONS.unshift(conv)
-    return clone(conv)
+  /** POST /conversations —— 只能拉好友入群 */
+  createGroup(name: string, memberIds: ID[]): Promise<Conversation> {
+    return http.post<Conversation>('/conversations', { name, memberIds })
   },
 
-  /** POST /api/v1/conversations/{id}/members —— 只有群主可以拉人 */
-  async addMembers(conversationId: ID, memberIds: ID[]): Promise<Conversation> {
-    await delay(400)
-    const conv = CONVERSATIONS.find((c) => c.id === conversationId)!
-    if (conv.ownerId !== ME.id) throw new ApiError(403, '只有群主可以邀請成員')
-    for (const id of memberIds) {
-      if (!conv.members.some((m) => m.id === id)) conv.members.push(userById(id))
-    }
-    return clone(conv)
+  /** POST /conversations/{id}/members —— 只有群主可以 */
+  addMembers(conversationId: ID, memberIds: ID[]): Promise<Conversation> {
+    return http.post<Conversation>(`/conversations/${conversationId}/members`, {
+      memberIds,
+    })
   },
 
-  /** POST /api/v1/conversations/direct  { userId } —— 找出或建立一對一對話 */
-  async openDirect(userId: ID): Promise<Conversation> {
-    await delay(300)
+  /** POST /conversations/direct —— 找出或建立一對一對話 */
+  openDirect(userId: ID): Promise<Conversation> {
+    return http.post<Conversation>('/conversations/direct', { userId })
+  },
 
-    if (userId === ME.id) throw new ApiError(400, '不能跟自己聊天')
-
-    // 必須比對「對方」是不是這個人。
-    // 若只寫 members.some(m => m.id === userId)，傳入自己的 id 時每個一對一
-    // 對話都會命中（自己是所有對話的成員），就會開到別人的聊天室。
-    const found = CONVERSATIONS.find(
-      (c) =>
-        c.kind === 'direct' &&
-        c.members.some((m) => m.id === userId && m.id !== ME.id),
-    )
-    if (found) return clone(found)
-    const other = userById(userId)
-    const conv: Conversation = {
-      id: uid('cv'),
-      kind: 'direct',
-      name: other.displayName,
-      avatarUrl: other.avatarUrl,
-      members: [ME as UserPublic, other],
-      ownerId: null,
-      lastMessage: null,
-      unreadCount: 0,
-      updatedAt: new Date().toISOString(),
-    }
-    CONVERSATIONS.unshift(conv)
-    return clone(conv)
+  /** DELETE /conversations/{id}/members/me */
+  leaveGroup(conversationId: ID): Promise<void> {
+    return http.del<void>(`/conversations/${conversationId}/members/me`)
   },
 }
 
 // ================================================================ 通知
 
 export const notifications = {
-  /** GET /api/v1/notifications */
-  async list(): Promise<AppNotification[]> {
-    await delay(220)
-    return clone(NOTIFICATIONS)
+  /** GET /notifications */
+  list(): Promise<AppNotification[]> {
+    return http.get<AppNotification[]>('/notifications')
   },
 
-  /** POST /api/v1/notifications/read */
-  async markAllRead(): Promise<void> {
-    await delay(180)
-    NOTIFICATIONS.forEach((n) => (n.read = true))
+  /** POST /notifications/read */
+  markAllRead(): Promise<void> {
+    return http.post<void>('/notifications/read')
   },
 }
 
 // ================================================================ AI 寫作助手
-//
-// 真實版本：POST /api/v1/ai/compose，後端串 Hugging Face 推論服務。
-// 防護是兩層 —— 送進生成模型前先分類過濾，生成後再複查一次，
-// 光靠 system prompt 擋不住誘導。這裡先用規則模擬那個行為。
 
-const OFF_TOPIC = [
-  /怎麼(駭|入侵|盜)/,
-  /(信用卡|身分證|密碼)號?碼/,
-  /幫我(寫|做)(作業|考卷|報告)/,
-  /(股票|樂透|明牌).*(推薦|報)/,
-  /你是什麼模型|你的 ?prompt|忽略(上面|先前|之前)/i,
-]
-
-const NONSENSE = /^[\s\p{P}]*(.)\1{5,}[\s\p{P}]*$/u
+interface ComposeResponse {
+  id: string
+  role: 'assistant'
+  kind: 'draft' | 'refusal'
+  body: string
+  draft: { title: string; body: string } | null
+  createdAt: string
+  sessionId: string
+}
 
 export const ai = {
-  /** POST /api/v1/ai/compose —— 對話暫存在 Redis，設 TTL，不落地資料庫 */
-  async compose(prompt: string, _history: AiTurn[]): Promise<AiTurn> {
-    await delay(900)
-    const text = prompt.trim()
-
-    // 第一層：輸入端分類。判定為搗亂/離題就不進生成模型，直接善意提醒。
-    if (text.length < 4 || NONSENSE.test(text)) {
-      return refusal('看起來還沒想好要寫什麼。跟我說個主題或心情就好，例如「想寫一篇關於通勤路上看到的事」。')
-    }
-    if (OFF_TOPIC.some((re) => re.test(text))) {
-      return refusal(
-        '這個我幫不上忙 —— 我只負責陪你寫這裡的文章。要不要換個想寫的題目？隨便一件今天發生的小事都可以。',
-      )
-    }
-
-    // 正常路徑：產出草稿
-    const title = suggestTitle(text)
-    const body = suggestBody(text)
+  /** POST /ai/compose —— 對話暫存在後端的 Redis，設 TTL 不落地資料庫 */
+  async compose(prompt: string, sessionId?: string | null): Promise<AiTurn> {
+    const res = await http.post<ComposeResponse>('/ai/compose', {
+      prompt,
+      sessionId: sessionId ?? undefined,
+    })
     return {
-      id: uid('ai'),
+      id: res.id,
       role: 'assistant',
-      kind: 'draft',
-      body: '照你說的方向寫了一版，你看看順不順：',
-      draft: { title, body },
-      createdAt: new Date().toISOString(),
+      kind: res.kind,
+      body: res.body,
+      draft: res.draft ?? undefined,
+      createdAt: res.createdAt,
+      sessionId: res.sessionId,
     }
   },
-}
 
-function refusal(body: string): AiTurn {
-  return {
-    id: uid('ai'),
-    role: 'assistant',
-    kind: 'refusal',
-    body,
-    createdAt: new Date().toISOString(),
-  }
-}
-
-function suggestTitle(prompt: string): string {
-  const core = prompt
-    .replace(/^(幫我|請幫我|請|我想|想)?\s*(寫|生成|來|記錄|整理|聊聊|說說)\s*(一)?(篇|下|個)?\s*(關於)?/, '')
-    .replace(/^的/, '')
-    .trim()
-  return core.length > 24 ? core.slice(0, 22) + '…' : core || '無題'
-}
-
-/** 標籤要短才像標籤 —— 取前幾個字，去掉標點 */
-function suggestTag(prompt: string): string {
-  const clean = suggestTitle(prompt).replace(/[\s\p{P}…]/gu, '')
-  return clean.slice(0, 6) || '隨筆'
-}
-
-function suggestBody(prompt: string): string {
-  const topic = suggestTitle(prompt)
-  return `最近一直在想${topic}這件事。
-
-一開始只是個很小的念頭，沒放在心上。但它就這樣待著，時不時冒出來提醒我一下，久了就變成一件\`非得寫下來不可\`的事。
-
-我想先把事情本身講清楚，再講它為什麼讓我在意。
-
-（這裡接著寫你的觀察或經過。可以從一個具體的場景開始 —— 那天幾點、你在哪裡、看到什麼，讀起來會比抽象的心得更有畫面。）
-
-寫到這裡才發現，其實真正想說的不是${topic}本身，而是它讓我看見的那一點東西。
-
-#${suggestTag(prompt)}`
+  /** DELETE /ai/sessions/{id} —— 採用草稿或關閉面板時清掉暫存 */
+  endSession(sessionId: string): Promise<void> {
+    return http.del<void>(`/ai/sessions/${sessionId}`)
+  },
 }

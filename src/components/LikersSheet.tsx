@@ -3,7 +3,7 @@ import { Heart, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Link } from 'react-router-dom'
 import { posts } from '../lib/api'
-import { presenceText, usePresence } from '../lib/presence'
+import { presenceText } from '../lib/presence'
 import type { UserPublic } from '../types'
 import { Avatar } from './Avatar'
 import { Skeleton } from './ui'
@@ -102,7 +102,7 @@ export function LikersSheet({
 }
 
 function LikerRow({ user, onNavigate }: { user: UserPublic; onNavigate: () => void }) {
-  const state = usePresence(user.id)
+  const state = user.presence
   return (
     <Link
       to={`/u/${user.username}`}
