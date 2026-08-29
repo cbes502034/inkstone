@@ -36,3 +36,12 @@ def expires_at() -> datetime:
 def build_link(token: str) -> str:
     base = settings.FRONTEND_URL.rstrip("/")
     return f"{base}/register/verify?token={quote(token)}"
+
+
+def reset_expires_at() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(minutes=settings.RESET_TTL_MINUTES)
+
+
+def build_reset_link(token: str) -> str:
+    base = settings.FRONTEND_URL.rstrip("/")
+    return f"{base}/reset-password?token={quote(token)}"

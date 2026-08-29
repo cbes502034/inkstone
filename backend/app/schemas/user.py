@@ -106,3 +106,20 @@ class AuthSession(TokenPair):
 
 class RefreshIn(BaseModel):
     refreshToken: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+    confirmPassword: str
+
+    @field_validator("confirmPassword")
+    @classmethod
+    def _passwords_match(cls, v: str, info) -> str:
+        if v != (info.data or {}).get("password"):
+            raise ValueError("兩次輸入的密碼不一致")
+        return v

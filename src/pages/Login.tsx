@@ -104,6 +104,13 @@ export function Login() {
         <Button full type="submit" loading={submit.isPending} className="mt-1">
           登入
         </Button>
+
+        <Link
+          to="/forgot-password"
+          className="text-center text-[13px] text-ink-soft transition-colors hover:text-accent"
+        >
+          忘記密碼了
+        </Link>
       </form>
     </AuthFrame>
   )

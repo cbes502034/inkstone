@@ -60,6 +60,25 @@ export const auth = {
     return http.post<AuthSession>('/auth/login', input)
   },
 
+  /** POST /auth/password/forgot —— 回應一律相同，不透露信箱是否註冊過 */
+  forgotPassword(email: string): Promise<{ message: string; devLink: string | null }> {
+    return http.post('/auth/password/forgot', { email })
+  },
+
+  /** GET /auth/password/check */
+  passwordResetCheck(token: string): Promise<{ username: string; email: string }> {
+    return http.get('/auth/password/check', { token })
+  },
+
+  /** POST /auth/password/reset */
+  resetPassword(input: {
+    token: string
+    password: string
+    confirmPassword: string
+  }): Promise<void> {
+    return http.post<void>('/auth/password/reset', input)
+  },
+
   /** POST /auth/logout */
   logout(): Promise<void> {
     return http.post<void>('/auth/logout')

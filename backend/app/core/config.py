@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     VERIFICATION_TTL_MINUTES: int = 30
     # 同一個信箱重寄驗證信的最短間隔，防止拿註冊功能轟炸別人的信箱
     VERIFICATION_RESEND_COOLDOWN_SECONDS: int = 60
+    # 重設密碼的票證權限更高（可接管既有帳號），有效期設得比註冊短
+    RESET_TTL_MINUTES: int = 15
+    RESET_RESEND_COOLDOWN_SECONDS: int = 60
 
     # --- SMTP ---
     # 留空就不寄信，改把驗證連結寫進日誌（本機開發用）。

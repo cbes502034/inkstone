@@ -251,6 +251,46 @@ def main() -> int:
     r = c.post("/ai/compose", headers=a_tok, json={"prompt": "aaaaaaaaaa"})
     check("擋下亂打", r.json()["kind"] == "refusal", r.text[:200])
 
+    print("\n— 忘記密碼 —")
+    r = c.post("/auth/password/forgot", json={"email": f"alice_{tag}@example.com"})
+    check("送出重設請求", r.status_code == 200 and bool(r.json().get("devLink")), r.text[:150])
+    reset_token = r.json()["devLink"].split("token=")[1]
+
+    r = c.post("/auth/password/forgot", json={"email": f"nobody_{tag}@example.com"})
+    check(
+        "不存在的信箱不透露",
+        r.status_code == 200 and r.json().get("devLink") is None,
+        r.text[:150],
+    )
+
+    r = c.get("/auth/password/check", params={"token": reset_token})
+    check("查詢重設票證", r.status_code == 200 and "username" in r.json(), r.text[:150])
+
+    r = c.post("/auth/password/reset", json={
+        "token": reset_token, "password": "brand-new-pw!", "confirmPassword": "nope!",
+    })
+    check("重設時密碼不一致被擋", r.status_code == 422, str(r.status_code))
+
+    r = c.post("/auth/password/reset", json={
+        "token": reset_token, "password": "brand-new-pw!",
+        "confirmPassword": "brand-new-pw!",
+    })
+    check("重設密碼成功", r.status_code == 204, r.text[:150])
+
+    r = c.post("/auth/login", json={
+        "account": f"alice_{tag}", "password": "brand-new-pw!",
+    })
+    check("新密碼可以登入", r.status_code == 200, r.text[:150])
+
+    r = c.post("/auth/login", json={
+        "account": f"alice_{tag}", "password": "sup3rsecret!",
+    })
+    check("舊密碼已失效", r.status_code == 401, str(r.status_code))
+
+    r = c.post("/auth/password/reset", json={
+        "token": reset_token, "password": "again!!!!", "confirmPassword": "again!!!!",
+    })
+    check("重設連結不能用第二次", r.status_code == 400, str(r.status_code))
     print("\n— 錯誤格式 —")
     r = c.get("/posts/does-not-exist", headers=a_tok)
     check("404 統一格式", r.status_code == 404 and "error" in r.json(), r.text[:150])

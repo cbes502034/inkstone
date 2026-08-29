@@ -14,27 +14,31 @@ from app.core.security import (
     needs_rehash,
     verify_password,
 )
-from app.models import PendingRegistration, User
+from app.models import PasswordReset, PendingRegistration, User
 from app.schemas.user import (
     AuthSession,
+    ForgotPasswordIn,
     LoginIn,
     RefreshIn,
     RegisterCheckOut,
     RegisterCompleteIn,
     RegisterStartIn,
     RegisterStartOut,
+    ResetPasswordIn,
     TokenPair,
     UpdateMeIn,
     UserPrivate,
 )
 from app.services.avatar import store_avatar
-from app.services.email import send_verification
+from app.services.email import send_password_reset, send_verification
 from app.services.presence import last_seen_of, presence_of
 from app.services.verification import (
     build_link,
+    build_reset_link,
     expires_at,
     hash_token,
     new_token,
+    reset_expires_at,
     verify_token,
 )
 
@@ -251,6 +255,112 @@ async def refresh(payload: RefreshIn, db: DbSession) -> TokenPair:
         accessToken=create_access_token(user.id),
         refreshToken=create_refresh_token(user.id),
     )
+
+
+@router.post("/password/forgot", response_model=RegisterStartOut)
+async def forgot_password(payload: ForgotPasswordIn, db: DbSession) -> RegisterStartOut:
+    """
+    寄出重設密碼的連結。
+
+    回應一律相同，不論這個信箱有沒有註冊過 —— 否則任何人都能拿這支 API
+    逐一確認某個信箱是不是這個站的使用者。
+    """
+    email = payload.email.lower()
+    now = datetime.now(timezone.utc)
+
+    user = (
+        await db.execute(select(User).where(User.email == email))
+    ).scalar_one_or_none()
+
+    if user is None or not user.is_active:
+        return RegisterStartOut(message="如果這個信箱有註冊過，重設連結已經寄出")
+
+    # 舊的票證一律作廢：同時存在多張有效的重設票證，
+    # 等於把接管帳號的機會多開了幾扇門
+    old = (
+        await db.execute(select(PasswordReset).where(PasswordReset.user_id == user.id))
+    ).scalars().all()
+    for row in old:
+        last = row.last_sent_at
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if (now - last).total_seconds() < settings.RESET_RESEND_COOLDOWN_SECONDS:
+            return RegisterStartOut(message="如果這個信箱有註冊過，重設連結已經寄出")
+        await db.delete(row)
+    await db.flush()
+
+    token = new_token()
+    db.add(
+        PasswordReset(
+            user_id=user.id,
+            token_hash=hash_token(token),
+            expires_at=reset_expires_at(),
+            last_sent_at=now,
+        )
+    )
+
+    link = build_reset_link(token)
+    try:
+        send_password_reset(email, link, user.username)
+    except Exception:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, "信件寄送失敗，請稍後再試一次"
+        ) from None
+
+    return RegisterStartOut(
+        message="如果這個信箱有註冊過，重設連結已經寄出",
+        devLink=link if settings.ENV == "dev" else None,
+    )
+
+
+@router.get("/password/check", response_model=RegisterCheckOut)
+async def password_reset_check(token: str, db: DbSession) -> RegisterCheckOut:
+    reset, user = await _load_reset(db, token)
+    return RegisterCheckOut(username=user.username, email=user.email)
+
+
+@router.post("/password/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_password(payload: ResetPasswordIn, db: DbSession) -> None:
+    """
+    設定新密碼。
+
+    密碼換掉之後，舊的 refresh token 理論上也該一併失效
+    （否則偷到 token 的人仍能繼續存取）——
+    這需要 token 撤銷名單，已列入待辦。
+    """
+    reset, user = await _load_reset(db, payload.token)
+
+    user.password_hash = hash_password(payload.password)
+    # 能收到信就代表信箱是本人的，順便把驗證狀態補上
+    user.email_verified = True
+
+    # 票證一次性
+    await db.delete(reset)
+
+
+async def _load_reset(db, token: str) -> tuple[PasswordReset, User]:
+    row = (
+        await db.execute(
+            select(PasswordReset).where(PasswordReset.token_hash == hash_token(token))
+        )
+    ).scalar_one_or_none()
+
+    if row is None or not verify_token(token, row.token_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "重設連結無效")
+
+    expires = row.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires < datetime.now(timezone.utc):
+        await db.delete(row)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "重設連結已過期，請重新申請")
+
+    user = await db.get(User, row.user_id)
+    if user is None or not user.is_active:
+        await db.delete(row)
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "重設連結無效")
+
+    return row, user
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

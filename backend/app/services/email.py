@@ -78,14 +78,73 @@ def _build_verification_mail(to: str, link: str, username: str) -> EmailMessage:
     return msg
 
 
-def send_verification(to: str, link: str, username: str) -> None:
-    msg = _build_verification_mail(to, link, username)
+def _build_reset_mail(to: str, link: str, username: str) -> EmailMessage:
+    msg = EmailMessage()
+    msg["Subject"] = "硯 — 重設你的密碼"
+    msg["From"] = f"{settings.MAIL_FROM_NAME} <{settings.MAIL_FROM}>"
+    msg["To"] = to
 
+    msg.set_content(
+        f"""你好，
+
+有人要求重設帳號 {username} 的密碼。
+
+點下面的連結設定新密碼：
+
+{link}
+
+這個連結 {settings.RESET_TTL_MINUTES} 分鐘內有效，只能使用一次。
+
+如果這不是你本人的操作，忽略這封信就好，你的密碼不會有任何變動。
+建議順便檢查一下這個信箱是否安全。
+"""
+    )
+
+    msg.add_alternative(
+        f"""<!doctype html>
+<html lang="zh-Hant">
+<body style="margin:0;background:#0b0d13;padding:32px 16px;
+             font-family:'Noto Sans TC',-apple-system,'Segoe UI',sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#14182a;border-radius:16px;
+              padding:40px 32px;color:#eceef4;">
+    <p style="margin:0 0 28px;font-size:22px;font-weight:600;">硯</p>
+    <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;line-height:1.5;">
+      重設你的密碼
+    </h1>
+    <p style="margin:0 0 24px;font-size:15px;line-height:1.8;color:#a7adbd;">
+      有人要求重設帳號
+      <strong style="color:#eceef4;">{username}</strong> 的密碼。
+    </p>
+    <a href="{link}"
+       style="display:inline-block;background:#6c9ffb;color:#0b0d13;
+              text-decoration:none;padding:13px 28px;border-radius:999px;
+              font-size:15px;font-weight:600;">
+      設定新密碼
+    </a>
+    <p style="margin:28px 0 0;font-size:13px;line-height:1.8;color:#6e7486;">
+      連結 {settings.RESET_TTL_MINUTES} 分鐘內有效，只能使用一次。<br>
+      如果這不是你本人的操作，忽略這封信就好，密碼不會有任何變動。
+    </p>
+  </div>
+</body>
+</html>""",
+        subtype="html",
+    )
+    return msg
+
+
+def send_password_reset(to: str, link: str, username: str) -> None:
+    _deliver(_build_reset_mail(to, link, username), to, link, "重設密碼信")
+
+
+def send_verification(to: str, link: str, username: str) -> None:
+    _deliver(_build_verification_mail(to, link, username), to, link, "驗證信")
+
+
+def _deliver(msg: EmailMessage, to: str, link: str, label: str) -> None:
     if not settings.smtp_configured:
         # 開發模式：把連結印出來，直接複製就能繼續流程
-        log.warning(
-            "SMTP 未設定，驗證信沒有寄出。收件者=%s\n驗證連結：%s", to, link
-        )
+        log.warning("SMTP 未設定，%s沒有寄出。收件者=%s\n連結：%s", label, to, link)
         return
 
     try:
@@ -101,9 +160,9 @@ def send_verification(to: str, link: str, username: str) -> None:
                 s.starttls(context=context)
                 s.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 s.send_message(msg)
-        log.info("驗證信已寄出：%s", to)
+        log.info("%s已寄出：%s", label, to)
     except Exception:
         # 寄信失敗不該把例外細節回給使用者（會洩漏 SMTP 設定），
         # 但一定要記進日誌，否則會變成無聲的故障
-        log.exception("驗證信寄送失敗：%s", to)
+        log.exception("%s寄送失敗：%s", label, to)
         raise

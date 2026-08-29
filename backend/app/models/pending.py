@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Index, String
+from sqlalchemy import ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDMixin, UtcDateTime
@@ -35,4 +35,29 @@ class PendingRegistration(Base, UUIDMixin, TimestampMixin):
 
     # 防止有人不斷重送驗證信轟炸別人的信箱
     send_count: Mapped[int] = mapped_column(default=1, nullable=False)
+    last_sent_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+
+
+class PasswordReset(Base, UUIDMixin, TimestampMixin):
+    """
+    重設密碼的票證。
+
+    與註冊票證分開兩張表，不共用 —— 兩者的生命週期、有效期與
+    「用完之後要做什麼」都不同，混在一起遲早會出現用註冊票證改別人密碼的漏洞。
+
+    同樣只存雜湊。這張票的權限比註冊票更高（可以接管既有帳號），
+    所以有效期設得更短。
+    """
+
+    __tablename__ = "password_resets"
+    __table_args__ = (
+        Index("ix_reset_user", "user_id"),
+        Index("ix_reset_expires", "expires_at"),
+    )
+
+    user_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
     last_sent_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)

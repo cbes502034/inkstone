@@ -6,6 +6,7 @@ import { Feed } from './pages/Feed'
 import { Friends } from './pages/Friends'
 import { Login } from './pages/Login'
 import { Register, RegisterVerify } from './pages/Register'
+import { ForgotPassword, ResetPassword } from './pages/ResetPassword'
 import { Notifications } from './pages/Notifications'
 import { PostDetail } from './pages/PostDetail'
 import { Profile } from './pages/Profile'
@@ -34,6 +35,10 @@ export default function App() {
       />
       {/* 信件裡的連結導到這裡。已登入也要能開 —— 使用者可能在別的裝置點信 */}
       <Route path="/register/verify" element={<RegisterVerify />} />
+
+      {/* 忘記密碼。已登入也能開 —— 使用者可能在別的裝置點信 */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
 
       <Route
         element={
