@@ -25,6 +25,7 @@ import { useTheme } from '../lib/theme'
 import { useUnreadTitle } from '../lib/title'
 import { useAuth } from '../store/auth'
 import { Avatar } from './Avatar'
+import { WakingNotice } from './WakingNotice'
 import { Logo, Wordmark } from './Logo'
 
 /* ---------------------------------------------------------------- 導覽項目 */
@@ -72,7 +73,10 @@ export function AppShell() {
   }, [collapsed])
 
   // 本機存的登入資料可能是舊版格式或已過期，開啟時向伺服器要一次最新的
-  const { data: fresh } = useQuery({ queryKey: ['me'], queryFn: auth.me })
+  const { data: fresh, isLoading: waking } = useQuery({
+    queryKey: ['me'],
+    queryFn: auth.me,
+  })
   useEffect(() => {
     if (fresh) patchUser(fresh)
   }, [fresh, patchUser])
@@ -236,6 +240,10 @@ export function AppShell() {
           {!hideMobileNav && <div className="h-20 md:hidden" />}
         </main>
       </div>
+
+      {/* 免費方案的後端會休眠，第一個請求可能等 30~50 秒。
+          不說明的話使用者只會覺得壞了。 */}
+      <WakingNotice show={waking} />
 
       {/* ---------------------------------------- 手機頂列 */}
       <header
