@@ -10,6 +10,7 @@ services:
     name: inkstone-api
     runtime: python
     plan: free
+    region: singapore
     rootDir: backend
 
     # 建置階段只裝套件。
@@ -50,6 +51,7 @@ services:
   - type: web
     name: inkstone-web
     runtime: static
+    region: singapore
     rootDir: .
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
