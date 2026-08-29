@@ -291,6 +291,43 @@ def main() -> int:
         "token": reset_token, "password": "again!!!!", "confirmPassword": "again!!!!",
     })
     check("重設連結不能用第二次", r.status_code == 400, str(r.status_code))
+    print("\n— 群組管理 —")
+    r = c.post("/conversations", headers=a_tok, json={
+        "name": "管理測試", "memberIds": [bob["user"]["id"]],
+    })
+    grp = r.json()["id"]
+
+    r = c.patch(f"/conversations/{grp}", headers=b_tok, json={"name": "亂改"})
+    check("非群主不能改名", r.status_code == 403, str(r.status_code))
+
+    r = c.patch(f"/conversations/{grp}", headers=a_tok, json={"name": "改過的群名"})
+    check("群主可以改名", r.status_code == 200 and r.json()["name"] == "改過的群名",
+          r.text[:150])
+
+    r = c.delete(f"/conversations/{grp}/members/{bob['user']['id']}", headers=b_tok)
+    check("非群主不能踢人", r.status_code == 403, str(r.status_code))
+
+    r = c.delete(f"/conversations/{grp}/members/{alice['user']['id']}", headers=a_tok)
+    check("群主不能用踢人踢自己", r.status_code == 400, str(r.status_code))
+
+    r = c.delete(f"/conversations/{grp}/members/{bob['user']['id']}", headers=a_tok)
+    check("群主可以踢人", r.status_code == 204, str(r.status_code))
+
+    r = c.get(f"/conversations/{grp}/messages", headers=b_tok)
+    check("被踢的人讀不到對話", r.status_code == 404, str(r.status_code))
+
+    # 群主退出時要把群主轉給其他人，不留無主群組
+    r = c.post(f"/conversations/{grp}/members", headers=a_tok,
+               json={"memberIds": [bob["user"]["id"]]})
+    check("重新邀請回來", r.status_code == 200, r.text[:150])
+
+    r = c.delete(f"/conversations/{grp}/members/me", headers=a_tok)
+    check("群主退出", r.status_code == 204, str(r.status_code))
+
+    r = c.get(f"/conversations/{grp}", headers=b_tok)
+    check("群主自動轉移給剩下的人",
+          r.status_code == 200 and r.json()["ownerId"] == bob["user"]["id"],
+          r.text[:200])
     print("\n— 檢舉與封鎖 —")
     r = c.post("/reports", headers=b_tok, json={
         "targetType": "post", "targetId": post["id"], "reason": "垃圾訊息",

@@ -293,6 +293,16 @@ export const chat = {
     return http.post<Conversation>('/conversations/direct', { userId })
   },
 
+  /** PATCH /conversations/{id} —— 只有群主可以改名 */
+  renameGroup(conversationId: ID, name: string): Promise<Conversation> {
+    return http.patch<Conversation>(`/conversations/${conversationId}`, { name })
+  },
+
+  /** DELETE /conversations/{id}/members/{userId} —— 只有群主可以踢人 */
+  removeMember(conversationId: ID, userId: ID): Promise<void> {
+    return http.del<void>(`/conversations/${conversationId}/members/${userId}`)
+  },
+
   /** DELETE /conversations/{id}/members/me */
   leaveGroup(conversationId: ID): Promise<void> {
     return http.del<void>(`/conversations/${conversationId}/members/me`)

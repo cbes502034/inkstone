@@ -36,6 +36,10 @@ class CreateGroupIn(BaseModel):
     memberIds: list[str] = Field(min_length=1, max_length=100)
 
 
+class RenameGroupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
 class AddMembersIn(BaseModel):
     memberIds: list[str] = Field(min_length=1, max_length=100)
 

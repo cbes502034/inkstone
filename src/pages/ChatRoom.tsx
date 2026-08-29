@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, CornerDownLeft, Users } from 'lucide-react'
+import { ArrowLeft, CornerDownLeft, Settings2, Users } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Avatar, AvatarStack } from '../components/Avatar'
+import { GroupPanel } from '../components/GroupPanel'
 import { Skeleton } from '../components/ui'
 import { chat } from '../lib/api'
 import { presenceText } from '../lib/presence'
@@ -17,6 +18,7 @@ export function ChatRoom() {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
+  const [groupOpen, setGroupOpen] = useState(false)
   const bottom = useRef<HTMLDivElement>(null)
 
   const { data: conv } = useQuery({
@@ -84,7 +86,7 @@ export function ChatRoom() {
               {onlineInGroup > 0 && (
                 <span className="text-online">· {onlineInGroup} 人在線</span>
               )}
-              {conv.ownerId === 'u_me' && <span>· 你是群主</span>}
+              {conv.ownerId === me?.id && <span>· 你是群主</span>}
             </p>
           ) : (
             conv && (
@@ -98,6 +100,16 @@ export function ChatRoom() {
             )
           )}
         </div>
+
+        {conv?.kind === 'group' && (
+          <button
+            onClick={() => setGroupOpen(true)}
+            aria-label="群組設定"
+            className="press grid size-9 shrink-0 place-items-center rounded-full text-ink-soft transition-colors hover:bg-paper-sunk hover:text-ink"
+          >
+            <Settings2 size={18} />
+          </button>
+        )}
       </header>
 
       {/* 訊息 */}
@@ -149,6 +161,15 @@ export function ChatRoom() {
           </button>
         </div>
       </div>
+
+      {conv?.kind === 'group' && me && (
+        <GroupPanel
+          conversation={conv}
+          meId={me.id}
+          open={groupOpen}
+          onClose={() => setGroupOpen(false)}
+        />
+      )}
     </div>
   )
 }

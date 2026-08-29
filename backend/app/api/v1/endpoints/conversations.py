@@ -20,6 +20,7 @@ from app.schemas.chat import (
     MessageIn,
     MessageOut,
     OpenDirectIn,
+    RenameGroupIn,
 )
 from app.services.friends import friend_ids, is_blocked
 from app.services.realtime import hub
@@ -274,6 +275,29 @@ async def send_message(
     return result
 
 
+@router.patch("/{conversation_id}", response_model=ConversationOut)
+async def rename_group(
+    conversation_id: str, payload: RenameGroupIn, db: DbSession, me: CurrentUser
+) -> ConversationOut:
+    conv = await _require_member(db, conversation_id, me.id)
+    if conv.kind is not ConversationKind.group:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "一對一對話沒有名稱")
+    if conv.owner_id != me.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "只有群主可以改名稱")
+
+    conv.name = payload.name.strip()
+    await db.flush()
+
+    # 其他成員的畫面要跟著更新，不用等他們重新整理
+    others = [m.user_id for m in conv.members if m.user_id != me.id]
+    if others:
+        await hub.broadcast(
+            others, "conversation", {"id": conv.id, "name": conv.name}
+        )
+
+    return await _conv_out(db, conv, me)
+
+
 @router.delete("/{conversation_id}/members/me", status_code=status.HTTP_204_NO_CONTENT)
 async def leave_group(conversation_id: str, db: DbSession, me: CurrentUser) -> None:
     conv = await _require_member(db, conversation_id, me.id)
@@ -288,3 +312,29 @@ async def leave_group(conversation_id: str, db: DbSession, me: CurrentUser) -> N
     if conv.owner_id == me.id:
         rest = [m for m in conv.members if m.user_id != me.id]
         conv.owner_id = rest[0].user_id if rest else None
+
+
+# 這支必須註冊在 /members/me 之後。
+# FastAPI 依註冊順序比對路徑，先放參數化路由的話，
+# 「me」會被當成 user_id 吃掉，退出群組就永遠走不到。
+@router.delete(
+    "/{conversation_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def remove_member(
+    conversation_id: str, user_id: str, db: DbSession, me: CurrentUser
+) -> None:
+    """群主把成員移出群組。要退出自己請用 /members/me。"""
+    conv = await _require_member(db, conversation_id, me.id)
+    if conv.kind is not ConversationKind.group:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "一對一對話不能移除成員")
+    if conv.owner_id != me.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "只有群主可以移除成員")
+    if user_id == me.id:
+        # 群主要離開得走退出流程，那裡才有轉移群主的邏輯
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "要離開請用退出群組")
+
+    member = next((m for m in conv.members if m.user_id == user_id), None)
+    if member is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "這個人不在群組裡")
+
+    await db.delete(member)
