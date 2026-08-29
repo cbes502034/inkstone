@@ -39,9 +39,10 @@ services:
       #   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
       - key: DATABASE_URL
         sync: false
-      # 前端的正式網址，例如 https://inkstone-web.onrender.com
+      # 前端網址。不是機密，直接寫在這裡由 Blueprint 同步，
+      # 比在後台手動維護可靠 —— 改網址時跟著程式碼一起版控
       - key: CORS_ORIGINS
-        sync: false
+        value: https://inkstone-web.onrender.com
       - key: REDIS_URL
         sync: false
       - key: HF_TOKEN
@@ -57,9 +58,10 @@ services:
     staticPublishPath: dist
 
     envVars:
-      # 後端的正式網址 + /api/v1
+      # 後端網址。inkstone-api 這個名稱在 Render 上已被佔用，
+      # 所以實際主機名多了隨機後綴，不能照名稱推測
       - key: VITE_API_BASE_URL
-        sync: false
+        value: https://inkstone-api-kbhs.onrender.com/api/v1
 
     routes:
       # SPA：所有路徑都交給 index.html，
