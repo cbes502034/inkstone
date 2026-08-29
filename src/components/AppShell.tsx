@@ -5,6 +5,8 @@ import {
   Feather,
   Home,
   MessageCircle,
+  Bell as BellIcon,
+  BellOff,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -18,7 +20,9 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { auth, chat, notifications } from '../lib/api'
 import { useHeartbeat } from '../lib/presence'
 import { useRealtime } from '../lib/realtime'
+import { isMuted, playNotification, setMuted } from '../lib/sound'
 import { useTheme } from '../lib/theme'
+import { useUnreadTitle } from '../lib/title'
 import { useAuth } from '../store/auth'
 import { Avatar } from './Avatar'
 import { Logo, Wordmark } from './Logo'
@@ -90,6 +94,18 @@ export function AppShell() {
 
   const unreadChat = convs?.reduce((n, c) => n + c.unreadCount, 0) ?? 0
   const unreadNotes = notes?.filter((n) => !n.read).length ?? 0
+
+  // 切到別的分頁時，聲音一過就沒了，標題上的數字會一直留著
+  useUnreadTitle(unreadChat + unreadNotes)
+
+  const [muted, setMutedState] = useState(isMuted)
+  const toggleSound = () => {
+    const next = !muted
+    setMuted(next)
+    setMutedState(next)
+    // 開啟時試聽一次，順便讓瀏覽器授予音訊權限
+    if (!next) playNotification(true)
+  }
 
   // 聊天室內頁在手機上要全螢幕，藏起底部導覽避免擋到輸入框
   const hideMobileNav = /^\/chat\/.+/.test(location.pathname)
@@ -194,6 +210,14 @@ export function AppShell() {
                 </span>
               )}
             </Link>
+            <button
+              onClick={toggleSound}
+              aria-label={muted ? '開啟通知聲' : '關閉通知聲'}
+              title={muted ? '開啟通知聲' : '關閉通知聲'}
+              className="press grid size-9 shrink-0 place-items-center rounded-full text-ink-soft transition-colors hover:bg-paper-sunk hover:text-ink"
+            >
+              {muted ? <BellOff size={18} /> : <BellIcon size={18} />}
+            </button>
             <button
               onClick={toggle}
               aria-label={isDark ? '切換至淺色' : '切換至深色'}

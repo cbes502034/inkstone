@@ -1,8 +1,36 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import quote, unquote
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _encode_credentials(url: str) -> str:
+    """
+    把連線字串裡的帳號與密碼做百分比編碼。
+
+    切法刻意選「最後一個 @」而不是第一個 —— 密碼本身就可能含 @，
+    用第一個會在密碼中間切開。主機名不會有 @，所以最後一個必定是分隔符。
+
+    已經編碼過的字串先解碼再編碼，避免重複編碼把 %40 變成 %2540。
+    """
+    if "://" not in url:
+        return url
+
+    scheme, _, rest = url.partition("://")
+    if "@" not in rest:
+        return url  # 沒有帳密的連線字串
+
+    credentials, _, host_part = rest.rpartition("@")
+    user, sep, password = credentials.partition(":")
+
+    safe_user = quote(unquote(user), safe="")
+    if not sep:
+        return f"{scheme}://{safe_user}@{host_part}"
+
+    safe_password = quote(unquote(password), safe="")
+    return f"{scheme}://{safe_user}:{safe_password}@{host_part}"
 
 
 class Settings(BaseSettings):
@@ -94,16 +122,25 @@ class Settings(BaseSettings):
         """
         正規化連線字串。
 
-        Supabase 與大多數雲端供應商給的是 `postgresql://...`，
-        但 SQLAlchemy 的 async engine 需要指定驅動 `postgresql+asyncpg://...`。
-        在這裡自動補上，使用者可以直接貼供應商給的字串，不用手動改。
+        做兩件事：
+        1. 補上驅動：供應商給的是 `postgresql://...`，SQLAlchemy 的 async
+           engine 需要 `postgresql+asyncpg://...`
+        2. 對帳號密碼做百分比編碼
+
+        第 2 點是實際踩過的坑。資料庫密碼常含 @ ( ) + = / : # 這類字元，
+        它們在 URL 裡有語法意義 —— 密碼裡的 @ 會被當成「帳密與主機的分隔符」，
+        整個字串就被切錯位，錯誤訊息還會把一小段密碼吐進日誌。
+
+        在這裡統一處理，使用者直接貼供應商給的原始字串就能用。
         """
         url = self.DATABASE_URL.strip()
+
         if url.startswith("postgres://"):  # 有些平台仍給舊式前綴
             url = "postgresql://" + url[len("postgres://") :]
         if url.startswith("postgresql://"):
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]
-        return url
+
+        return _encode_credentials(url)
 
     @property
     def smtp_configured(self) -> bool:
