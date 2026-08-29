@@ -209,6 +209,21 @@ class Settings(BaseSettings):
                 "多半是貼進環境變數時只貼到一半，請重新完整複製 Supabase 的 "
                 "Session pooler 連線字串。"
             )
+
+        # Supabase 的直連位址只有 IPv6（沒有 A 記錄），
+        # 而 Render 免費方案沒有 IPv6 對外連線，一定連不上，
+        # 錯誤會是難以判讀的 OSError: [Errno 101] Network is unreachable。
+        # 在這裡直接擋下並說清楚要換成什麼。
+        host = raw.rpartition("@")[2].split("/")[0].split(":")[0]
+        if host.startswith("db.") and host.endswith(".supabase.co"):
+            project_ref = host.removeprefix("db.").removesuffix(".supabase.co")
+            raise ValueError(
+                f"不能用 Supabase 的直連位址（{host}）—— 它只有 IPv6，"
+                "而 Render 免費方案沒有 IPv6 對外連線。\n"
+                "請改用 connection pooler：Supabase → Connect → Session pooler，"
+                f"主機會是 aws-<n>-<區域>.pooler.supabase.com，"
+                f"使用者名稱是 postgres.{project_ref}（要帶專案 ref）。"
+            )
         return raw
 
     @field_validator("DATABASE_URL")
