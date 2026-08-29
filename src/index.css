@@ -12,11 +12,15 @@
   /* 夜 — 頁面最底層，不透明 */
   --color-void: #05060a;
 
-  /* 浮層 — 半透明，星光經過背景模糊後化成柔暈透出來。
-     底色夠深，就算透出星光，文字對比仍在 15:1 以上，讀起來不吃力 */
-  --color-paper: rgba(11, 13, 19, 0.6);
-  --color-paper-raised: rgba(16, 18, 26, 0.7);
-  --color-paper-sunk: rgba(255, 255, 255, 0.05);
+  /* 浮層 — 半透明。夜空畫得濃，這層就要夠厚，
+     星光經過背景模糊後只剩柔暈，文字對比仍維持在 14:1 以上 */
+  --color-paper: rgba(8, 10, 17, 0.82);
+  --color-paper-raised: rgba(14, 17, 26, 0.86);
+  --color-paper-sunk: rgba(255, 255, 255, 0.06);
+
+  /* 文章區塊 — 比其他浮層透，讓夜空透進卡片裡。
+     偏藍而非純黑，壓在星雲上才不會顯得髒 */
+  --color-panel: rgba(14, 20, 38, 0.52);
 
   /* 字 */
   --color-ink: #eceef4;
@@ -61,6 +65,8 @@
   --color-rule: rgba(20, 24, 40, 0.1);
   --color-rule-strong: rgba(20, 24, 40, 0.2);
 
+  --color-panel: rgba(255, 255, 255, 0.6);
+
   --color-accent: #2f6ad9;
   --color-accent-hover: #2557b8;
   --color-accent-wash: rgba(47, 106, 217, 0.1);
@@ -80,50 +86,59 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  /**
+   * 底色與星雲畫在 html，body 保持透明。
+   *
+   * 這不是風格選擇，是繪製順序的問題：CSS 的順序是
+   * 根元素背景 → 負 z-index 元素 → 一般區塊背景。
+   * 星空 canvas 是 z-index:-10，若把不透明底色放在 body，
+   * body 那層會在 canvas「之後」才畫，整片蓋住星空。
+   */
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
-    background-color: var(--color-void);
-  }
-
-  body {
-    margin: 0;
-    min-height: 100dvh;
-    color: var(--color-ink);
-    font-family: var(--font-sans);
-    line-height: 1.75;
-    letter-spacing: 0.01em;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
 
     /* 星雲 —— 大尺度、低對比的色霧。負責氣氛，不製造噪訊 */
     background-color: var(--color-void);
     background-image:
-      radial-gradient(
-        58rem 40rem at 8% -6%,
-        rgba(64, 96, 190, 0.38),
-        transparent 62%
+      /* 銀河霧帶 —— 斜穿畫面，跟 canvas 裡星點聚集的方向一致 */
+      linear-gradient(
+        163deg,
+        transparent 26%,
+        rgba(86, 122, 208, 0.16) 40%,
+        rgba(126, 108, 214, 0.2) 50%,
+        rgba(78, 156, 210, 0.15) 60%,
+        transparent 74%
       ),
       radial-gradient(
-        46rem 34rem at 92% 4%,
-        rgba(96, 74, 170, 0.3),
+        52rem 38rem at 6% -4%,
+        rgba(58, 104, 214, 0.55),
         transparent 60%
       ),
       radial-gradient(
-        40rem 30rem at 78% 46%,
-        rgba(40, 92, 160, 0.22),
+        44rem 34rem at 94% 2%,
+        rgba(124, 84, 206, 0.45),
+        transparent 58%
+      ),
+      radial-gradient(
+        36rem 28rem at 72% 34%,
+        rgba(52, 150, 200, 0.3),
         transparent 62%
       ),
       radial-gradient(
-        68rem 44rem at 42% 106%,
-        rgba(46, 78, 158, 0.3),
-        transparent 64%
+        30rem 24rem at 22% 58%,
+        rgba(96, 76, 190, 0.28),
+        transparent 62%
+      ),
+      radial-gradient(
+        64rem 42rem at 46% 104%,
+        rgba(44, 92, 186, 0.4),
+        transparent 62%
       );
     background-attachment: fixed;
   }
 
-  :root[data-theme='light'] body {
+  :root[data-theme='light'] {
     background-image:
       radial-gradient(
         62rem 42rem at 12% -8%,
@@ -140,6 +155,20 @@
         rgba(160, 180, 235, 0.26),
         transparent 64%
       );
+  }
+
+  /* body 必須保持透明，否則會蓋住上面說的那層星空 */
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: transparent;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.75;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
 
   h1,
@@ -249,15 +278,39 @@
 }
 
 /**
- * 閱讀欄。
+ * 區塊。
  *
- * 一整條連續的霧面底，不是一塊塊卡片 —— 文字永遠落在乾淨的底上，
- * 星空則在兩側留白處保持通透。這是可讀性的保險。
+ * 主欄不再是一整片霧面 —— 夜空直接透到內容之間，
+ * 但每一篇文章、每一段內容都有自己的框，讀的時候才有落點。
+ * 文字一律落在這層霧面上，不會直接壓在星點上。
  */
+@utility panel {
+  background-color: var(--color-panel);
+  /* 透得多，就要糊得多 —— 星點化開才不會跟文字打架 */
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  border: 1px solid var(--color-rule);
+  border-radius: 1rem;
+}
+
+/**
+ * 柔霧。
+ *
+ * 個人頁、好友、聊天這類非文章的內容用這個 —— 沒有框線也沒有圓角，
+ * 看起來就是背景的一部分，但底下墊了一層模糊，字不會壓在星點上。
+ * 「不要框」跟「字要清楚」是兩件事，這裡只拿掉框。
+ */
+@utility scrim {
+  background-color: var(--color-panel);
+  backdrop-filter: blur(20px) saturate(130%);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+}
+
+/** 給側欄、彈出面板這類需要整片霧面的地方 */
 @utility reading-surface {
   background-color: var(--color-paper);
-  backdrop-filter: blur(12px) saturate(120%);
-  -webkit-backdrop-filter: blur(12px) saturate(120%);
+  backdrop-filter: blur(14px) saturate(125%);
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
 }
 
 @utility no-scrollbar {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Check, Clock, MessageCircle, UserPlus } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
 import { Button, EmptyState, FadeIn, PostSkeleton, Skeleton } from '../components/ui'
@@ -51,8 +51,17 @@ export function UserProfile() {
     )
   }
 
+  /**
+   * 點到自己就直接進個人頁。
+   *
+   * 這頁是「看別人」的視角 —— 加好友、傳訊息這些對外的操作對自己完全不適用。
+   * 統一在這裡導向，不論使用者是從貼文、留言、搜尋還是聊天室點進來都會正確。
+   * 位置必須在所有 hook 之後，否則會違反 Hooks 規則。
+   */
+  if (user.friendState === 'self') return <Navigate to="/me" replace />
+
   return (
-    <div>
+    <div className="scrim min-h-dvh">
       <div className="sticky top-[52px] z-20 border-b border-rule bg-paper/85 px-3 py-2 backdrop-blur-md md:top-0">
         <button
           onClick={() => navigate(-1)}
@@ -126,11 +135,13 @@ export function UserProfile() {
         文章
       </h2>
 
-      {!theirPosts && <PostSkeleton />}
-      {theirPosts?.length === 0 && (
-        <EmptyState title="還沒有文章" description={`${user.displayName} 還沒發表過東西。`} />
-      )}
-      {theirPosts?.map((p) => <PostCard key={p.id} post={p} />)}
+      <div className="flex flex-col gap-3 p-3 pt-1 sm:gap-4 sm:p-4 sm:pt-1">
+        {!theirPosts && <PostSkeleton />}
+        {theirPosts?.length === 0 && (
+          <EmptyState title="還沒有文章" description={`${user.displayName} 還沒發表過東西。`} />
+        )}
+        {theirPosts?.map((p) => <PostCard key={p.id} post={p} />)}
+      </div>
     </div>
   )
 }

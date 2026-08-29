@@ -39,7 +39,7 @@ export function Notifications() {
   const unread = data?.filter((n) => !n.read).length ?? 0
 
   return (
-    <div>
+    <div className="scrim min-h-dvh">
       <PageTitle
         title="通知"
         right={

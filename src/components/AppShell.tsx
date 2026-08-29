@@ -6,36 +6,64 @@ import {
   Home,
   MessageCircle,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Sun,
   User as UserIcon,
   Users,
 } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { auth, chat, notifications } from '../lib/api'
 import { useTheme } from '../lib/theme'
 import { useAuth } from '../store/auth'
 import { Avatar } from './Avatar'
-import { Wordmark } from './Logo'
+import { Logo, Wordmark } from './Logo'
 
 /* ---------------------------------------------------------------- 導覽項目 */
 
-const NAV = [
+type Badge = 'chat' | 'bell' | undefined
+
+interface NavItem {
+  to: string
+  label: string
+  icon: typeof Home
+  end?: boolean
+  badge?: Badge
+}
+
+const NAV: NavItem[] = [
   { to: '/', label: '動態', icon: Home, end: true },
   { to: '/search', label: '探索', icon: Compass },
-  { to: '/chat', label: '訊息', icon: MessageCircle, badge: 'chat' as const },
+  { to: '/chat', label: '訊息', icon: MessageCircle, badge: 'chat' },
   { to: '/friends', label: '好友', icon: Users },
   { to: '/me', label: '我', icon: UserIcon },
+]
+
+/** 側欄多一個通知；手機的通知在頂列，不佔底部的位置 */
+const SIDEBAR_NAV: NavItem[] = [
+  ...NAV,
+  { to: '/notifications', label: '通知', icon: Bell, badge: 'bell' },
 ]
 
 /** 手機底部只放四個，中間讓給「寫文章」；好友收進「我」的頁面裡 */
 const MOBILE_NAV = NAV.filter((n) => n.to !== '/friends')
 
+const COLLAPSE_KEY = 'inkstone.sidebar.collapsed'
+
 export function AppShell() {
   const { user, patchUser } = useAuth()
   const { isDark, toggle } = useTheme()
   const location = useLocation()
+
+  // 收合狀態記住，下次進來維持使用者的選擇
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(COLLAPSE_KEY) === '1',
+  )
+  useEffect(() => {
+    localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0')
+  }, [collapsed])
 
   // 本機存的登入資料可能是舊版格式或已過期，開啟時向伺服器要一次最新的
   const { data: fresh } = useQuery({ queryKey: ['me'], queryFn: auth.me })
@@ -59,89 +87,104 @@ export function AppShell() {
   const hideMobileNav = /^\/chat\/.+/.test(location.pathname)
 
   return (
-    <div className="min-h-dvh bg-paper">
+    /* 這層不能有底色 —— 蓋上去星空就沒了 */
+    <div className="min-h-dvh">
       {/* 手機頂列是 fixed，內容要留出等高的空間才不會被蓋住 */}
       <div
         className={`mx-auto flex max-w-6xl ${hideMobileNav ? '' : 'pt-[52px] md:pt-0'}`}
       >
         {/* ---------------------------------------- 桌機側欄 */}
-        <aside className="reading-surface sticky top-0 hidden h-dvh w-[240px] shrink-0 flex-col justify-between border-l border-rule px-4 py-6 md:flex lg:w-[260px]">
+        <aside
+          className={`reading-surface sticky top-0 hidden h-dvh shrink-0 flex-col justify-between
+                      border-l border-rule py-6 transition-[width] duration-300 md:flex
+                      ${collapsed ? 'w-[76px] px-3' : 'w-[240px] px-4 lg:w-[260px]'}`}
+        >
           <div>
-            <Link to="/" className="mb-8 ml-2 inline-block">
-              <Wordmark size={34} />
-            </Link>
+            <div
+              className={`mb-8 flex items-center ${collapsed ? 'flex-col gap-3' : 'justify-between'}`}
+            >
+              <Link to="/" className={collapsed ? '' : 'ml-2'} aria-label="硯">
+                {collapsed ? <Logo size={34} /> : <Wordmark size={34} />}
+              </Link>
+              <button
+                onClick={() => setCollapsed((c) => !c)}
+                aria-label={collapsed ? '展開側欄' : '收合側欄'}
+                aria-expanded={!collapsed}
+                className="press grid size-8 shrink-0 place-items-center rounded-lg text-ink-faint transition-colors hover:bg-paper-sunk hover:text-ink"
+              >
+                {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              </button>
+            </div>
 
             <nav className="flex flex-col gap-0.5">
-              {NAV.map(({ to, label, icon: Icon, end, badge }) => (
-                <NavLink key={to} to={to} end={end}>
-                  {({ isActive }) => (
-                    <span
-                      className={`relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors
-                        ${isActive ? 'font-medium text-ink' : 'text-ink-soft hover:bg-paper-sunk hover:text-ink'}`}
-                    >
-                      <Icon size={20} strokeWidth={isActive ? 2.2 : 1.7} />
-                      {label}
-                      {badge === 'chat' && unreadChat > 0 && (
-                        <span className="ml-auto grid size-5 place-items-center rounded-full bg-accent text-[11px] font-medium text-white">
-                          {unreadChat}
+              {SIDEBAR_NAV.map(({ to, label, icon: Icon, end, badge }) => {
+                const count = badge === 'chat' ? unreadChat : badge === 'bell' ? unreadNotes : 0
+                return (
+                  <NavLink key={to} to={to} end={end} title={collapsed ? label : undefined}>
+                    {({ isActive }) => (
+                      <span
+                        className={`relative flex items-center rounded-xl py-2.5 text-[15px] transition-colors
+                          ${collapsed ? 'justify-center px-0' : 'gap-3 px-3'}
+                          ${isActive ? 'font-medium text-ink' : 'text-ink-soft hover:bg-paper-sunk hover:text-ink'}`}
+                      >
+                        <span className="relative">
+                          <Icon size={20} strokeWidth={isActive ? 2.2 : 1.7} />
+                          {/* 收合時徽章縮成一個小點，貼在圖示右上 */}
+                          {collapsed && count > 0 && (
+                            <span className="absolute -right-1 -top-0.5 size-2 rounded-full bg-accent" />
+                          )}
                         </span>
-                      )}
-                      {isActive && (
-                        <motion.span
-                          layoutId="nav-active"
-                          className="absolute inset-0 -z-10 rounded-xl bg-paper-sunk"
-                          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                        />
-                      )}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
-
-              <NavLink to="/notifications">
-                {({ isActive }) => (
-                  <span
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors
-                      ${isActive ? 'bg-paper-sunk font-medium text-ink' : 'text-ink-soft hover:bg-paper-sunk hover:text-ink'}`}
-                  >
-                    <Bell size={20} strokeWidth={isActive ? 2.2 : 1.7} />
-                    通知
-                    {unreadNotes > 0 && (
-                      <span className="ml-auto grid size-5 place-items-center rounded-full bg-accent text-[11px] font-medium text-white">
-                        {unreadNotes}
+                        {!collapsed && label}
+                        {!collapsed && count > 0 && (
+                          <span className="ml-auto grid size-5 place-items-center rounded-full bg-accent text-[11px] font-medium text-white">
+                            {count}
+                          </span>
+                        )}
+                        {isActive && (
+                          <motion.span
+                            layoutId="nav-active"
+                            className="absolute inset-0 -z-10 rounded-xl bg-paper-sunk"
+                            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+                          />
+                        )}
                       </span>
                     )}
-                  </span>
-                )}
-              </NavLink>
+                  </NavLink>
+                )
+              })}
             </nav>
 
             <Link
               to="/write"
-              className="press mt-6 flex w-full items-center justify-center gap-2 rounded-full
-                         bg-accent px-5 py-3 text-[15px] font-medium text-white
-                         transition-colors hover:bg-accent-hover"
+              title={collapsed ? '寫文章' : undefined}
+              className={`press mt-6 flex w-full items-center justify-center gap-2 rounded-full
+                          bg-accent py-3 text-[15px] font-medium text-white
+                          transition-colors hover:bg-accent-hover ${collapsed ? 'px-0' : 'px-5'}`}
             >
               <Feather size={17} />
-              寫文章
+              {!collapsed && '寫文章'}
             </Link>
           </div>
 
           {/* 側欄底部 —— 帳號 + 主題 */}
-          <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 ${collapsed ? 'flex-col' : ''}`}>
             <Link
               to="/me"
-              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-paper-sunk"
+              title={collapsed ? user?.displayName : undefined}
+              className={`flex min-w-0 items-center rounded-xl p-2 transition-colors hover:bg-paper-sunk
+                          ${collapsed ? '' : 'flex-1 gap-2.5'}`}
             >
               {user && <Avatar user={user} size={34} />}
-              <span className="min-w-0 flex-1 leading-tight">
-                <span className="block truncate text-sm font-medium">
-                  {user?.displayName}
+              {!collapsed && (
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block truncate text-sm font-medium">
+                    {user?.displayName}
+                  </span>
+                  <span className="block truncate text-xs text-ink-faint">
+                    @{user?.username}
+                  </span>
                 </span>
-                <span className="block truncate text-xs text-ink-faint">
-                  @{user?.username}
-                </span>
-              </span>
+              )}
             </Link>
             <button
               onClick={toggle}
@@ -154,10 +197,9 @@ export function AppShell() {
         </aside>
 
         {/* ----------------------------------------
-            內容欄。
-            一整條連續的霧面底，文字永遠落在乾淨的底上，
-            星空則留在兩側的留白處透出來。 */}
-        <main className="reading-surface min-w-0 flex-1 border-rule md:border-x">
+            內容欄本身不上底色，夜空直接透過來；
+            區塊感交給各頁自己的 panel。 */}
+        <main className="min-w-0 flex-1">
           <Outlet />
           {!hideMobileNav && <div className="h-20 md:hidden" />}
         </main>

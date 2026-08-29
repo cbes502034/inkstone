@@ -24,6 +24,7 @@ import { extractTags } from './markup'
 import {
   COMMENTS,
   CONVERSATIONS,
+  LIKES,
   ME,
   MESSAGES,
   NOTIFICATIONS,
@@ -199,7 +200,37 @@ export const posts = {
     const post = POSTS.find((p) => p.id === id)!
     post.likedByMe = !post.likedByMe
     post.likeCount += post.likedByMe ? 1 : -1
+
+    // 名單要跟著動，不然點開會看不到自己
+    const list = (LIKES[id] ??= [])
+    const at = list.indexOf(ME.id)
+    if (post.likedByMe && at < 0) list.unshift(ME.id)
+    if (!post.likedByMe && at >= 0) list.splice(at, 1)
+
     return { likeCount: post.likeCount, likedByMe: post.likedByMe }
+  },
+
+  /**
+   * GET /api/v1/posts/{id}/likes —— 誰按了讚
+   *
+   * 熱門文章的讚可能上千，所以只回傳一頁，總數另外給。
+   * 排序把自己和好友放前面 —— 使用者最在意的是「我認識的人有誰按了」。
+   */
+  async likers(id: ID): Promise<{ items: UserPublic[]; total: number }> {
+    await delay(260)
+    const post = POSTS.find((p) => p.id === id)
+    if (!post) throw new ApiError(404, '找不到這篇文章')
+
+    const ids = LIKES[id] ?? []
+    const rank = (uid_: ID) =>
+      uid_ === ME.id ? 0 : RELATIONS[uid_] === 'friends' ? 1 : 2
+
+    const items = ids
+      .map((x) => USERS.find((u) => u.id === x))
+      .filter((u): u is UserPublic => Boolean(u))
+      .sort((a, b) => rank(a.id) - rank(b.id))
+
+    return { items: clone(items), total: post.likeCount }
   },
 
   /** GET /api/v1/search?q= —— 標題、內文、標籤、作者一起搜 */
@@ -419,8 +450,16 @@ export const chat = {
   /** POST /api/v1/conversations/direct  { userId } —— 找出或建立一對一對話 */
   async openDirect(userId: ID): Promise<Conversation> {
     await delay(300)
+
+    if (userId === ME.id) throw new ApiError(400, '不能跟自己聊天')
+
+    // 必須比對「對方」是不是這個人。
+    // 若只寫 members.some(m => m.id === userId)，傳入自己的 id 時每個一對一
+    // 對話都會命中（自己是所有對話的成員），就會開到別人的聊天室。
     const found = CONVERSATIONS.find(
-      (c) => c.kind === 'direct' && c.members.some((m) => m.id === userId),
+      (c) =>
+        c.kind === 'direct' &&
+        c.members.some((m) => m.id === userId && m.id !== ME.id),
     )
     if (found) return clone(found)
     const other = userById(userId)

@@ -10,6 +10,7 @@ import { useAuth } from '../store/auth'
 
 export function Chat() {
   const [creating, setCreating] = useState(false)
+  const { user } = useAuth()
 
   const { data: convs, isLoading } = useQuery({
     queryKey: ['conversations'],
@@ -17,7 +18,7 @@ export function Chat() {
   })
 
   return (
-    <div>
+    <div className="scrim min-h-dvh">
       <PageTitle
         title="訊息"
         right={
@@ -59,7 +60,10 @@ export function Chat() {
       )}
 
       {convs?.map((c) => {
-        const others = c.members.filter((m) => m.id !== c.lastMessage?.sender.id)
+        // 要濾掉的是「我自己」。
+        // 原本寫成濾掉最後發言者，當對方是最後發言的人時，留下的就變成我，
+        // 一對一對話就會顯示自己的頭像。
+        const others = c.members.filter((m) => m.id !== user?.id)
         return (
           <Link
             key={c.id}

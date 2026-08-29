@@ -41,7 +41,7 @@ export function Friends() {
   ]
 
   return (
-    <div>
+    <div className="scrim min-h-dvh">
       <PageTitle title="好友" />
 
       {/* 分頁 */}

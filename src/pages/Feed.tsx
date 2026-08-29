@@ -38,10 +38,10 @@ export function Feed() {
   const greeting = hour < 5 ? '夜深了' : hour < 11 ? '早安' : hour < 18 ? '午安' : '晚安'
 
   return (
-    <div>
-      {/* 招呼 —— 給進來的人一個落腳點，而不是直接砸一牆內容 */}
-      <header className="border-b border-rule px-5 py-7 sm:px-8">
-        <p className="text-sm text-ink-faint">
+    <div className="flex flex-col gap-3 p-3 sm:gap-4 sm:p-4">
+      {/* 招呼 —— 不加框，直接落在夜空上 */}
+      <header className="px-2 py-6 sm:px-3 sm:py-8">
+        <p className="text-sm text-ink-soft">
           {greeting}，{user?.displayName}
         </p>
         <h1 className="mt-1.5 text-[26px] leading-tight tracking-tight sm:text-3xl">

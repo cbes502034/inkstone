@@ -289,6 +289,31 @@ for (const post of POSTS) {
   post.commentCount = COMMENTS.filter((c) => c.postId === post.id).length
 }
 
+// ---------------------------------------------------------------- 按讚名單
+//
+// 真實系統的讚可能上百上千，不會一次全撈。這裡存的是「認識的人」，
+// 其餘的以總數呈現 —— 跟後端分頁回傳的形狀一致。
+
+export const LIKES: Record<string, string[]> = {
+  p_1: ['u_chen', 'u_tsai', 'u_lin', 'u_wu'],
+  p_2: ['u_me', 'u_yeh', 'u_huang', 'u_wu', 'u_hsu'],
+  p_3: ['u_me', 'u_tsai', 'u_chen', 'u_lin'],
+  p_4: ['u_wu', 'u_hsu', 'u_lin'],
+  p_5: ['u_chen', 'u_me', 'u_tsai', 'u_huang'],
+  p_6: ['u_yeh', 'u_lin'],
+  p_7: ['u_lin', 'u_huang', 'u_chen', 'u_tsai', 'u_wu', 'u_yeh'],
+  p_8: ['u_huang', 'u_wu', 'u_lin'],
+}
+
+// 讓 likedByMe 與名單一致，不然畫面會自相矛盾
+for (const post of POSTS) {
+  const list = LIKES[post.id] ?? []
+  if (post.likedByMe && !list.includes(ME.id)) list.unshift(ME.id)
+  if (!post.likedByMe && list.includes(ME.id)) {
+    LIKES[post.id] = list.filter((id) => id !== ME.id)
+  }
+}
+
 // ---------------------------------------------------------------- 聊天
 
 export const MESSAGES: Message[] = []

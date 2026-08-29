@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
+import { Tooltip } from '../components/Tooltip'
 import { Button, EmptyState, FadeIn, PostSkeleton } from '../components/ui'
 import { auth, posts } from '../lib/api'
 import { ImageError, prepareAvatar } from '../lib/image'
@@ -62,7 +63,7 @@ export function Profile() {
   if (!user) return null
 
   return (
-    <div>
+    <div className="scrim min-h-dvh">
       <FadeIn className="border-b border-rule px-5 py-8 sm:px-8">
         {/* 頭像 —— 點擊即可更換 */}
         <div className="flex items-start gap-4">
@@ -159,9 +160,9 @@ export function Profile() {
         {/* 註冊資料 —— 只有本人看得到 */}
         {!editing && (
           <div className="mt-6 rounded-xl border border-rule bg-paper-sunk px-4 py-3.5">
-            <p className="mb-2.5 text-[13px] font-medium text-ink">
+            <p className="mb-2.5 flex items-center gap-1.5 text-[13px] font-medium text-ink">
               帳號資料
-              <span className="ml-2 font-normal text-ink-faint">只有你看得到</span>
+              <Tooltip text="這一區只有你自己看得到，其他人進到你的頁面不會看到這些欄位。" />
             </p>
             <dl className="flex flex-col gap-2 text-[13px]">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -193,9 +194,9 @@ export function Profile() {
               }`}
             />
             <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-medium text-ink">顯示上線狀態</p>
-              <p className="mt-0.5 text-[12px] text-ink-faint">
-                {user.showPresence ? '好友看得到你在線上' : '別人只會看到你離線'}
+              <p className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                顯示上線狀態
+                <Tooltip text="關掉之後別人一律看到你是離線，也看不到你最後上線的時間。" />
               </p>
             </div>
             <button
@@ -244,19 +245,21 @@ export function Profile() {
         我的文章 {myPosts && `· ${myPosts.length} 篇`}
       </h2>
 
-      {isLoading && <PostSkeleton />}
-      {myPosts?.length === 0 && (
-        <EmptyState
-          title="還沒有發表文章"
-          description="寫下第一篇吧，不用寫得很好，寫出來就好。"
-          action={
-            <Link to="/write">
-              <Button>開始寫</Button>
-            </Link>
-          }
-        />
-      )}
-      {myPosts?.map((p) => <PostCard key={p.id} post={p} />)}
+      <div className="flex flex-col gap-3 p-3 pt-1 sm:gap-4 sm:p-4 sm:pt-1">
+        {isLoading && <PostSkeleton />}
+        {myPosts?.length === 0 && (
+          <EmptyState
+            title="還沒有發表文章"
+            description="寫下第一篇吧，不用寫得很好，寫出來就好。"
+            action={
+              <Link to="/write">
+                <Button>開始寫</Button>
+              </Link>
+            }
+          />
+        )}
+        {myPosts?.map((p) => <PostCard key={p.id} post={p} />)}
+      </div>
     </div>
   )
 }

@@ -39,8 +39,8 @@ export function PostCard({ post }: { post: Post }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
       onClick={() => navigate(`/post/${post.id}`)}
-      className="group cursor-pointer border-b border-rule px-5 py-7 transition-colors
-                 hover:bg-paper-raised sm:px-8"
+      className="panel group cursor-pointer px-5 py-6 transition-colors
+                 hover:border-rule-strong sm:px-7 sm:py-7"
     >
       {/* 作者列 */}
       <div className="mb-3.5 flex items-center gap-2.5">

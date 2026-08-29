@@ -36,7 +36,7 @@ export function Search() {
   const hasResults = (data?.posts.length ?? 0) + (data?.users.length ?? 0) > 0
 
   return (
-    <div>
+    <div className="scrim min-h-dvh">
       <PageTitle title="探索" />
 
       <div className="sticky top-[52px] z-20 border-b border-rule bg-paper/90 px-5 py-3 backdrop-blur-md sm:px-8 md:top-0">
@@ -115,9 +115,11 @@ export function Search() {
           <h2 className="px-5 pb-1 pt-6 text-[13px] font-medium tracking-wide text-ink-faint sm:px-8">
             文章 · {data.posts.length} 篇
           </h2>
-          {data.posts.map((p) => (
-            <PostCard key={p.id} post={p} />
-          ))}
+          <div className="flex flex-col gap-3 p-3 pt-1 sm:gap-4 sm:p-4 sm:pt-1">
+            {data.posts.map((p) => (
+              <PostCard key={p.id} post={p} />
+            ))}
+          </div>
         </section>
       )}
     </div>

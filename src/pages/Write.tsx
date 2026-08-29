@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AiPanel } from '../components/AiPanel'
 import { PostBody } from '../components/PostBody'
+import { Tooltip } from '../components/Tooltip'
 import { Button } from '../components/ui'
 import { posts } from '../lib/api'
 import { extractTags } from '../lib/markup'
@@ -57,7 +58,7 @@ export function Write() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="scrim flex min-h-dvh flex-col">
       {/* 工具列 */}
       <header className="sticky top-[52px] z-20 flex items-center gap-2 border-b border-rule bg-paper/90 px-3 py-2.5 backdrop-blur-md md:top-0">
         <button
@@ -72,6 +73,12 @@ export function Write() {
         <span className="hidden shrink-0 whitespace-nowrap text-sm text-ink-faint sm:inline">
           {editId ? '編輯文章' : '新文章'}
         </span>
+
+        {/* 排版語法不佔版面，移到游標上才出現 */}
+        <Tooltip
+          side="bottom"
+          text="用反引號包住文字會變粗體；井字號開頭會變成可點擊的標籤，讀者點下去會跳到搜尋頁。"
+        />
 
         {/* 編輯／預覽切換 */}
         <div className="ml-auto flex shrink-0 rounded-full bg-paper-sunk p-0.5">
@@ -128,24 +135,8 @@ export function Write() {
                          outline-none placeholder:text-ink-faint"
             />
 
-            {/* 語法速查 —— 一行帶過，不解釋原理 */}
-            <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px] text-ink-faint">
-              <span className="flex items-center gap-1.5">
-                <code className="rounded bg-paper-sunk px-1.5 py-0.5 font-mono text-xs">
-                  `文字`
-                </code>
-                <strong className="text-ink-soft">粗體</strong>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <code className="rounded bg-paper-sunk px-1.5 py-0.5 font-mono text-xs">
-                  #標籤
-                </code>
-                <span className="text-accent">可搜尋</span>
-              </span>
-            </div>
-
             {tags.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2 text-[13px]">
+              <div className="mt-6 flex flex-wrap gap-2 text-[13px]">
                 {tags.map((t) => (
                   <span
                     key={t}

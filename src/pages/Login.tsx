@@ -184,10 +184,7 @@ export function Register() {
               <Camera size={18} />
             </span>
           </button>
-          <div className="text-[13px] text-ink-soft">
-            <p className="font-medium text-ink">大頭照</p>
-            <p className="mt-0.5 text-ink-faint">選一張，或之後再說。</p>
-          </div>
+          <p className="text-[13px] font-medium text-ink">大頭照</p>
           <input
             ref={fileRef}
             type="file"

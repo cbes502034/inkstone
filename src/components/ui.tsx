@@ -1,5 +1,6 @@
 import { motion } from 'motion/react'
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react'
+import { Tooltip } from './Tooltip'
 
 /* ------------------------------------------------------------------ 按鈕 */
 
@@ -54,8 +55,12 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
 export function Field({ label, hint, error, id, className = '', ...rest }: FieldProps) {
   const inputId = id ?? `f_${label}`
   return (
-    <label htmlFor={inputId} className="block">
-      <span className="mb-1.5 block text-[13px] font-medium text-ink-soft">{label}</span>
+    <div className="block">
+      {/* 說明收進標籤旁的提示氣泡，版面上只留欄位本身；錯誤訊息一定要看得到，維持在下方 */}
+      <span className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-ink-soft">
+        <label htmlFor={inputId}>{label}</label>
+        {hint && <Tooltip text={hint} />}
+      </span>
       <input
         id={inputId}
         {...rest}
@@ -64,12 +69,8 @@ export function Field({ label, hint, error, id, className = '', ...rest }: Field
                     focus:border-accent
                     ${error ? 'border-accent' : 'border-rule'} ${className}`}
       />
-      {(hint || error) && (
-        <span className={`mt-1.5 block text-xs ${error ? 'text-accent' : 'text-ink-faint'}`}>
-          {error || hint}
-        </span>
-      )}
-    </label>
+      {error && <span className="mt-1.5 block text-xs text-accent">{error}</span>}
+    </div>
   )
 }
 
@@ -82,7 +83,7 @@ export function Skeleton({ className = '' }: { className?: string }) {
 /** 貼文卡片的骨架 —— 形狀貼近實際內容，比轉圈圈的等待感低 */
 export function PostSkeleton() {
   return (
-    <div className="border-b border-rule px-5 py-7 sm:px-8">
+    <div className="panel px-5 py-6 sm:px-7 sm:py-7">
       <div className="mb-4 flex items-center gap-2.5">
         <Skeleton className="size-9 rounded-full" />
         <Skeleton className="h-3 w-24" />
