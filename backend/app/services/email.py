@@ -181,6 +181,13 @@ async def deliver(mail: Mail, to: str, link: str) -> None:
     provider = settings.email_provider
 
     if provider == "none":
+        if settings.ENV == "prod":
+            # 正式環境沒設定通道卻回成功，是最糟的失敗方式 ——
+            # 使用者以為信寄出了，實際上永遠等不到，而且沒有任何跡象。
+            # 寧可讓註冊直接失敗，至少看得見。
+            log.error("正式環境沒有設定寄信通道，無法寄出。收件者=%s", to)
+            raise RuntimeError("沒有設定寄信通道")
+
         # 本機開發：把連結印出來，直接複製就能繼續流程
         log.warning("沒有設定寄信通道，信沒有寄出。收件者=%s\n連結：%s", to, link)
         return

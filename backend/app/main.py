@@ -15,6 +15,15 @@ from app.db.session import engine
 # 匯入才會註冊到 metadata，建表時不會漏掉
 import app.models  # noqa: F401
 
+# uvicorn 只設定自己的 logger，不動 root ——
+# 不做這一步，應用程式的 log.info / log.warning 全部不會出現在部署日誌裡，
+# 出問題時等於瞎子摸象。
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s [%(name)s] %(message)s",
+    force=True,  # 蓋掉 uvicorn 已經裝好的 handler，否則設定不會生效
+)
+
 log = logging.getLogger("inkstone")
 
 
@@ -120,8 +129,21 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
 
 @app.get("/health", tags=["meta"])
 async def health() -> dict:
-    """給 Render 的健康檢查，也用來在免費方案上做保溫。"""
-    return {"status": "ok", "env": settings.ENV}
+    """
+    給 Render 的健康檢查，也用來在免費方案上做保溫。
+
+    順便回報幾項設定的「開關狀態」—— 只有是/否與通道名稱，
+    沒有任何金鑰或連線字串。部署後想確認設定有沒有生效，
+    打這一支就好，不必翻日誌（雲端平台的日誌常常抓不到啟動訊息）。
+    """
+    return {
+        "status": "ok",
+        "env": settings.ENV,
+        "email": settings.email_provider,
+        "database": "postgres" if not settings.is_sqlite else "sqlite",
+        "redis": bool(settings.REDIS_URL),
+        "ai": "huggingface" if settings.HF_TOKEN else "local",
+    }
 
 
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
