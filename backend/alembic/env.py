@@ -15,7 +15,7 @@ config = context.config
 
 # 連線字串一律從應用程式設定讀，不寫在 alembic.ini 裡 ——
 # 那個檔案會進版控，正式環境的資料庫密碼絕不能放進去
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -25,7 +25,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     context.configure(
-        url=settings.DATABASE_URL,
+        url=settings.database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

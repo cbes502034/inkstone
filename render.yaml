@@ -2,28 +2,43 @@
 #
 # 前端是純靜態檔，走 Static Site（不會休眠、免費）。
 # 後端是 Web Service，免費方案閒置 15 分鐘會休眠，
-# 下一個請求要等 30~50 秒喚醒 —— 上線前要處理，見 README。
+# 下一個請求要等 30~50 秒喚醒 —— 上線前要處理，見 DEPLOY.md。
 
 services:
+  # ---------------------------------------------------------------- 後端
   - type: web
     name: inkstone-api
     runtime: python
     plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt && alembic upgrade head
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    # 建置階段只裝套件。
+    # migration 移到啟動時執行 —— 建置環境不該連生產資料庫，
+    # 而且該階段環境變數不保證已就緒，是部署失敗的常見原因。
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
     healthCheckPath: /health
+
     envVars:
       - key: ENV
         value: prod
       - key: PYTHON_VERSION
         value: "3.12.7"
-      # 讓 Render 自動產生一組夠強的密鑰，不需要人工填
+      # 讓 Render 產生一組夠強的密鑰，不需要人工填也不會外流
       - key: JWT_SECRET
         generateValue: true
-      # 以下要在 Render 後台手動填入，不要寫進這個檔案
+
+      # 以下在 Render 後台手動填，不要寫進這個檔案（它會進版控）
+      #
+      # DATABASE_URL 必須用 Supabase 的 connection pooler，不能用直連：
+      #   直連 db.<ref>.supabase.co 是 IPv6-only，
+      #   Render 免費方案沒有 IPv6 對外，會直接連不上。
+      #   到 Supabase → Connect → 選 Session pooler，格式類似
+      #   postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
       - key: DATABASE_URL
         sync: false
+      # 前端的正式網址，例如 https://inkstone-web.onrender.com
       - key: CORS_ORIGINS
         sync: false
       - key: REDIS_URL
@@ -31,17 +46,22 @@ services:
       - key: HF_TOKEN
         sync: false
 
+  # ---------------------------------------------------------------- 前端
   - type: web
     name: inkstone-web
     runtime: static
     rootDir: .
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
+
     envVars:
+      # 後端的正式網址 + /api/v1
       - key: VITE_API_BASE_URL
         sync: false
+
     routes:
-      # SPA：所有路徑都交給 index.html，否則重新整理 /post/xxx 會 404
+      # SPA：所有路徑都交給 index.html，
+      # 否則直接開 /post/xxx 或重新整理會 404
       - type: rewrite
         source: /*
         destination: /index.html

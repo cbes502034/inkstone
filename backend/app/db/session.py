@@ -6,6 +6,7 @@ from app.core.config import settings
 
 # SQLite 不支援連線池的部分參數，兩種資料庫分開設定
 _engine_kwargs: dict = {"echo": False, "future": True}
+
 if not settings.is_sqlite:
     _engine_kwargs.update(
         pool_size=5,
@@ -14,7 +15,17 @@ if not settings.is_sqlite:
         pool_recycle=1800,
     )
 
-engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
+    if settings.is_pgbouncer:
+        # Transaction 模式的 PgBouncer 每次交易可能落在不同的實體連線上，
+        # asyncpg 的 prepared statement 快取會因此失效，出現
+        # 「prepared statement _asyncpg_xx does not exist」。
+        # 關掉快取即可，代價是每次都重新 parse，對這個規模影響不大。
+        _engine_kwargs["connect_args"] = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
+
+engine = create_async_engine(settings.database_url, **_engine_kwargs)
 
 SessionLocal = async_sessionmaker(
     engine,

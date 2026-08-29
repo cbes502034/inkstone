@@ -67,7 +67,35 @@ class Settings(BaseSettings):
 
     @property
     def is_sqlite(self) -> bool:
-        return self.DATABASE_URL.startswith("sqlite")
+        return self.database_url.startswith("sqlite")
+
+    @property
+    def database_url(self) -> str:
+        """
+        正規化連線字串。
+
+        Supabase 與大多數雲端供應商給的是 `postgresql://...`，
+        但 SQLAlchemy 的 async engine 需要指定驅動 `postgresql+asyncpg://...`。
+        在這裡自動補上，使用者可以直接貼供應商給的字串，不用手動改。
+        """
+        url = self.DATABASE_URL.strip()
+        if url.startswith("postgres://"):  # 有些平台仍給舊式前綴
+            url = "postgresql://" + url[len("postgres://") :]
+        if url.startswith("postgresql://"):
+            url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+        return url
+
+    @property
+    def is_pgbouncer(self) -> bool:
+        """
+        是否連到連線池（Supabase 的 pooler）。
+
+        Transaction 模式的 PgBouncer 不支援 prepared statement，
+        asyncpg 預設會用它，不關掉會出現
+        「prepared statement does not exist」這種難查的錯誤。
+        """
+        url = self.database_url
+        return "pooler.supabase.com" in url or ":6543" in url
 
     @field_validator("JWT_SECRET")
     @classmethod
