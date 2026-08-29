@@ -20,6 +20,10 @@ log = logging.getLogger("inkstone")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 只記形狀不記內容。連線出問題時這一行就能定位，
+    # 不必等 SQLAlchemy 把密碼碎片吐進日誌
+    log.info("資料庫設定：%s", settings.describe_database_url())
+
     # 本機用 SQLite 時直接建表，clone 下來就能跑。
     # 正式環境走 Alembic migration，不在啟動時改結構 ——
     # 自動建表遇到既有資料表不會做任何變更，等於悄悄跑在錯的 schema 上。

@@ -66,6 +66,10 @@ async def run_async_migrations() -> None:
 
     連線字串本來就不該進 alembic.ini，直接交給引擎最單純也最安全。
     """
+    # migration 跑在應用程式之前，失敗時看不到 app 的啟動日誌，
+    # 所以這裡也要印出形狀（不含內容）才查得動
+    print(f"[alembic] 資料庫設定：{settings.describe_database_url()}", flush=True)
+
     connectable = create_async_engine(settings.database_url, **_engine_kwargs())
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

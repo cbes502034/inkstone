@@ -167,6 +167,50 @@ class Settings(BaseSettings):
             raise ValueError("正式環境必須設定 JWT_SECRET")
         return v
 
+    def describe_database_url(self) -> str:
+        """
+        描述連線字串的「形狀」，不洩漏內容。
+
+        連線字串出問題時，SQLAlchemy 的錯誤訊息會把一小段密碼吐進日誌，
+        既不安全又難判讀。這支只回報結構，足以判斷問題出在哪。
+        """
+        raw = self.DATABASE_URL
+        scheme = raw.split("://")[0] if "://" in raw else "(沒有 :// )"
+        host = ""
+        if "://" in raw and "@" in raw:
+            host = raw.rpartition("@")[2].split("/")[0]
+        return (
+            f"長度={len(raw)} 前綴={scheme!r} "
+            f"有@={'@' in raw} 有換行={chr(10) in raw or chr(13) in raw} "
+            f"主機={host or '(無法判斷)'}"
+        )
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _must_look_like_url(cls, v: str, info) -> str:
+        """
+        先擋掉明顯不是連線字串的值。
+
+        沒有這道檢查時，錯誤會拖到 SQLAlchemy 才爆，
+        訊息長這樣：Could not parse SQLAlchemy URL from string '(eJ04jp6)+=@'
+        —— 那串是密碼碎片，既看不出問題也把密碼寫進了日誌。
+
+        最常見的原因是貼進環境變數時只貼到一半，或值裡混進了換行。
+        """
+        raw = v.strip()  # 前後空白與換行是貼上時常見的雜訊，直接去掉
+        if not raw:
+            raise ValueError("DATABASE_URL 是空的")
+        # 中間的換行不能容忍 —— 那代表值被截斷或黏到了別的東西
+        if "\n" in raw or "\r" in raw:
+            raise ValueError("DATABASE_URL 中間有換行，請確認貼上的是完整的單一行")
+        if "://" not in raw:
+            raise ValueError(
+                f"DATABASE_URL 不是完整的連線字串（缺少 :// ，長度 {len(raw)}）。"
+                "多半是貼進環境變數時只貼到一半，請重新完整複製 Supabase 的 "
+                "Session pooler 連線字串。"
+            )
+        return raw
+
     @field_validator("DATABASE_URL")
     @classmethod
     def _reject_sqlite_in_prod(cls, v: str, info) -> str:
