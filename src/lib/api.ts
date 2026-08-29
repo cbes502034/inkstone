@@ -26,15 +26,33 @@ export { ApiError } from './http'
 // ================================================================ 身分驗證
 
 export const auth = {
-  /** POST /auth/register */
-  register(input: {
+  /**
+   * POST /auth/register/start —— 註冊第一步
+   *
+   * 只送帳號與信箱，後端寄出驗證信。這時候還不會建立帳號。
+   * 回應一律相同，不論帳號是否已被使用 —— 後端刻意不透露，
+   * 否則這支 API 就成了帳號探測工具。
+   */
+  registerStart(input: {
     username: string
-    displayName: string
     email: string
+  }): Promise<{ message: string; devLink: string | null }> {
+    return http.post('/auth/register/start', input)
+  },
+
+  /** GET /auth/register/check —— 點開連結時先確認票證有效 */
+  registerCheck(token: string): Promise<{ username: string; email: string }> {
+    return http.get('/auth/register/check', { token })
+  },
+
+  /** POST /auth/register/complete —— 設定密碼，帳號在這一刻才建立 */
+  registerComplete(input: {
+    token: string
     password: string
+    confirmPassword: string
     avatarDataUrl?: string | null
   }): Promise<AuthSession> {
-    return http.post<AuthSession>('/auth/register', input)
+    return http.post<AuthSession>('/auth/register/complete', input)
   },
 
   /** POST /auth/login */

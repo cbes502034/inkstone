@@ -4,7 +4,8 @@ import { Chat } from './pages/Chat'
 import { ChatRoom } from './pages/ChatRoom'
 import { Feed } from './pages/Feed'
 import { Friends } from './pages/Friends'
-import { Login, Register } from './pages/Login'
+import { Login } from './pages/Login'
+import { Register, RegisterVerify } from './pages/Register'
 import { Notifications } from './pages/Notifications'
 import { PostDetail } from './pages/PostDetail'
 import { Profile } from './pages/Profile'
@@ -31,6 +32,8 @@ export default function App() {
         path="/register"
         element={isAuthed ? <Navigate to="/" replace /> : <Register />}
       />
+      {/* 信件裡的連結導到這裡。已登入也要能開 —— 使用者可能在別的裝置點信 */}
+      <Route path="/register/verify" element={<RegisterVerify />} />
 
       <Route
         element={
