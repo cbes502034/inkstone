@@ -1,0 +1,47 @@
+# Render 部署設定。
+#
+# 前端是純靜態檔，走 Static Site（不會休眠、免費）。
+# 後端是 Web Service，免費方案閒置 15 分鐘會休眠，
+# 下一個請求要等 30~50 秒喚醒 —— 上線前要處理，見 README。
+
+services:
+  - type: web
+    name: inkstone-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: prod
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # 讓 Render 自動產生一組夠強的密鑰，不需要人工填
+      - key: JWT_SECRET
+        generateValue: true
+      # 以下要在 Render 後台手動填入，不要寫進這個檔案
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: HF_TOKEN
+        sync: false
+
+  - type: web
+    name: inkstone-web
+    runtime: static
+    rootDir: .
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
+    routes:
+      # SPA：所有路徑都交給 index.html，否則重新整理 /post/xxx 會 404
+      - type: rewrite
+        source: /*
+        destination: /index.html

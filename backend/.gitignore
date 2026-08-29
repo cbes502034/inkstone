@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# 本機資料庫與環境變數，絕對不能進版控
+.env
+*.db
+*.db-journal
