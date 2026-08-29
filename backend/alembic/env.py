@@ -2,8 +2,8 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import settings
 from app.db.base import Base
@@ -13,14 +13,22 @@ import app.models  # noqa: F401
 
 config = context.config
 
-# 連線字串一律從應用程式設定讀，不寫在 alembic.ini 裡 ——
-# 那個檔案會進版控，正式環境的資料庫密碼絕不能放進去
-config.set_main_option("sqlalchemy.url", settings.database_url)
-
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+
+def _engine_kwargs() -> dict:
+    kwargs: dict = {"poolclass": pool.NullPool}
+    if settings.is_pgbouncer:
+        # Transaction 模式的 PgBouncer 不支援 prepared statement，
+        # 不關掉會出現「prepared statement does not exist」
+        kwargs["connect_args"] = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
+    return kwargs
 
 
 def run_migrations_offline() -> None:
@@ -47,11 +55,18 @@ def do_run_migrations(connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    """
+    直接用設定裡的連線字串建立引擎。
+
+    刻意不走 config.set_main_option("sqlalchemy.url", ...) ——
+    那個函式底層是 ConfigParser，會把 `%` 當成插值語法。
+    資料庫密碼含 `%`（或百分比編碼後產生的 `%XX`）時，
+    整段字串會被吃掉，只剩下無法解析的碎片，
+    錯誤訊息還會把一小段密碼吐進部署日誌。
+
+    連線字串本來就不該進 alembic.ini，直接交給引擎最單純也最安全。
+    """
+    connectable = create_async_engine(settings.database_url, **_engine_kwargs())
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
     await connectable.dispose()
