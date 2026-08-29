@@ -106,6 +106,25 @@ class Settings(BaseSettings):
             raise ValueError("正式環境必須設定 JWT_SECRET")
         return v
 
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _reject_sqlite_in_prod(cls, v: str, info) -> str:
+        """
+        正式環境不准用 SQLite。
+
+        忘了設 DATABASE_URL 時，預設值會讓服務「看起來正常啟動」，
+        實際上寫進容器的暫存磁碟 —— 每次重新部署或休眠喚醒，
+        使用者的文章與帳號就全部消失。
+
+        這種錯誤沉默地發生比直接啟動失敗糟糕太多，所以寧可大聲失敗。
+        """
+        env = (info.data or {}).get("ENV")
+        if env == "prod" and v.strip().startswith("sqlite"):
+            raise ValueError(
+                "正式環境必須設定 DATABASE_URL（SQLite 會存在容器的暫存磁碟，重啟即消失）"
+            )
+        return v
+
 
 @lru_cache
 def get_settings() -> Settings:
