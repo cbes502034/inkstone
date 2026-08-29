@@ -1,0 +1,38 @@
+from datetime import datetime
+
+from sqlalchemy import Index, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, TimestampMixin, UUIDMixin, UtcDateTime
+
+
+class PendingRegistration(Base, UUIDMixin, TimestampMixin):
+    """
+    待驗證的註冊。
+
+    信箱驗證完成前不建立 User —— 否則資料庫會累積大量沒驗證的殭屍帳號，
+    而且那些帳號會佔用帳號名稱與信箱的唯一性。
+
+    這張表同時扮演「保留位」的角色：A 送出註冊後、還沒點信之前，
+    B 不能拿同一個帳號名去註冊。過期後由清理程序釋出。
+    """
+
+    __tablename__ = "pending_registrations"
+    __table_args__ = (
+        Index("ix_pending_username", "username"),
+        Index("ix_pending_email", "email"),
+        Index("ix_pending_expires", "expires_at"),
+    )
+
+    username: Mapped[str] = mapped_column(String(32), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # 只存雜湊。資料庫萬一外洩，拿到這張表也無法冒用他人信箱完成註冊 ——
+    # 這跟密碼不存明碼是同一個道理，驗證連結等同一次性的通行證。
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+
+    # 防止有人不斷重送驗證信轟炸別人的信箱
+    send_count: Mapped[int] = mapped_column(default=1, nullable=False)
+    last_sent_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)

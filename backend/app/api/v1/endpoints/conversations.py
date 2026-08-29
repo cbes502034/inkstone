@@ -22,6 +22,7 @@ from app.schemas.chat import (
     OpenDirectIn,
 )
 from app.services.friends import friend_ids, is_blocked
+from app.services.realtime import hub
 from app.services.serializers import user_public
 
 router = APIRouter(prefix="/conversations", tags=["chat"])
@@ -261,7 +262,16 @@ async def send_message(
     await db.flush()
 
     msg.sender = me
-    return _msg_out(msg, me.id)
+    result = _msg_out(msg, me.id)
+
+    # 即時推給其他成員。isMine 是相對於收件者的，所以推出去的那份要設成 False
+    payload = result.model_dump(mode="json")
+    payload["isMine"] = False
+    others = [m.user_id for m in conv.members if m.user_id != me.id]
+    if others:
+        await hub.broadcast(others, "message", payload)
+
+    return result
 
 
 @router.delete("/{conversation_id}/members/me", status_code=status.HTTP_204_NO_CONTENT)

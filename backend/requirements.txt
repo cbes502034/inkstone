@@ -24,3 +24,4 @@ httpx==0.28.1                     # 呼叫 Hugging Face 推論服務
 
 # --- 圖片處理 ---
 pillow==11.1.0                    # 頭像後端二次驗證與壓縮
+websockets==14.1                  # WebSocket 測試用

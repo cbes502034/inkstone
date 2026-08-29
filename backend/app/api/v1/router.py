@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     posts,
     search,
     users,
+    ws,
 )
 
 api_router = APIRouter()
@@ -31,3 +32,4 @@ api_router.include_router(conversations.router)
 api_router.include_router(notifications.router)
 api_router.include_router(search.router)
 api_router.include_router(ai.router)
+api_router.include_router(ws.router)  # WebSocket：通知、訊息、上線狀態

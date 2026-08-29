@@ -53,6 +53,23 @@ class Settings(BaseSettings):
     HF_MODERATION_MODEL: str = "textdetox/xlmr-large-toxicity-classifier"
     HF_TIMEOUT_SECONDS: float = 60.0
 
+    # --- 信箱驗證 ---
+    # 前端網址，用來組出信裡的驗證連結
+    FRONTEND_URL: str = "http://localhost:5173"
+    VERIFICATION_TTL_MINUTES: int = 30
+    # 同一個信箱重寄驗證信的最短間隔，防止拿註冊功能轟炸別人的信箱
+    VERIFICATION_RESEND_COOLDOWN_SECONDS: int = 60
+
+    # --- SMTP ---
+    # 留空就不寄信，改把驗證連結寫進日誌（本機開發用）。
+    # Gmail、Brevo、Resend、Mailgun 都支援 SMTP，換供應商只要改這幾個值。
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    MAIL_FROM: str = "no-reply@inkstone.app"
+    MAIL_FROM_NAME: str = "硯 Inkstone"
+
     # --- 上傳限制 ---
     MAX_AVATAR_BYTES: int = 12 * 1024 * 1024
     AVATAR_SIZE_PX: int = 512
@@ -84,6 +101,10 @@ class Settings(BaseSettings):
         if url.startswith("postgresql://"):
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]
         return url
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_HOST and self.SMTP_USER and self.SMTP_PASSWORD)
 
     @property
     def is_pgbouncer(self) -> bool:

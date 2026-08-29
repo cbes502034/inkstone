@@ -6,16 +6,16 @@ from app.models import (
     Block,
     Friendship,
     FriendRequestStatus,
-    Notification,
+
     NotificationKind,
     User,
 )
 from app.schemas.user import UserPublic
+from app.services import notify
 from app.services.friends import friend_ids, get_friendship, is_blocked
 from app.services.serializers import user_public
 
 router = APIRouter(prefix="/friends", tags=["friends"])
-
 
 async def _load(db, ids: list[str]) -> list[UserPublic]:
     if not ids:
@@ -23,11 +23,9 @@ async def _load(db, ids: list[str]) -> list[UserPublic]:
     rows = (await db.execute(select(User).where(User.id.in_(ids)))).scalars().all()
     return [user_public(u) for u in rows]
 
-
 @router.get("", response_model=list[UserPublic])
 async def list_friends(db: DbSession, me: CurrentUser) -> list[UserPublic]:
     return await _load(db, await friend_ids(db, me.id))
-
 
 @router.get("/requests", response_model=list[UserPublic])
 async def list_requests(
@@ -50,7 +48,6 @@ async def list_requests(
 
     ids = [r[0] for r in (await db.execute(stmt)).all()]
     return await _load(db, ids)
-
 
 @router.post("/requests", status_code=status.HTTP_204_NO_CONTENT)
 async def send_request(db: DbSession, me: CurrentUser, toUserId: str) -> None:
@@ -87,16 +84,15 @@ async def send_request(db: DbSession, me: CurrentUser, toUserId: str) -> None:
     else:
         db.add(Friendship(requester_id=me.id, addressee_id=toUserId))
 
-    db.add(
-        Notification(
-            user_id=toUserId,
-            actor_id=me.id,
-            kind=NotificationKind.friend_request,
-            href="/friends",
-            preview="想加你為好友",
-        )
+    await db.flush()
+    await notify.create(
+        db,
+        user_id=toUserId,
+        actor=me,
+        kind=NotificationKind.friend_request,
+        href="/friends",
+        preview="想加你為好友",
     )
-
 
 @router.post("/requests/{user_id}/accept", status_code=status.HTTP_204_NO_CONTENT)
 async def accept_request(user_id: str, db: DbSession, me: CurrentUser) -> None:
@@ -108,16 +104,15 @@ async def accept_request(user_id: str, db: DbSession, me: CurrentUser) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "這筆邀請不是給你的")
 
     rel.status = FriendRequestStatus.accepted
-    db.add(
-        Notification(
-            user_id=rel.requester_id,
-            actor_id=me.id,
-            kind=NotificationKind.friend_accepted,
-            href=f"/u/{me.username}",
-            preview="接受了你的好友邀請",
-        )
+    await db.flush()
+    await notify.create(
+        db,
+        user_id=rel.requester_id,
+        actor=me,
+        kind=NotificationKind.friend_accepted,
+        href=f"/u/{me.username}",
+        preview="接受了你的好友邀請",
     )
-
 
 @router.delete("/requests/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def decline_request(user_id: str, db: DbSession, me: CurrentUser) -> None:
@@ -127,14 +122,12 @@ async def decline_request(user_id: str, db: DbSession, me: CurrentUser) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "沒有這筆邀請")
     await db.delete(rel)
 
-
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_friend(user_id: str, db: DbSession, me: CurrentUser) -> None:
     rel = await get_friendship(db, me.id, user_id)
     if rel is None or rel.status is not FriendRequestStatus.accepted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "你們不是好友")
     await db.delete(rel)
-
 
 @router.post("/block/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def block_user(user_id: str, db: DbSession, me: CurrentUser) -> None:
@@ -155,7 +148,6 @@ async def block_user(user_id: str, db: DbSession, me: CurrentUser) -> None:
     )
     if exists.scalar_one_or_none() is None:
         db.add(Block(blocker_id=me.id, blocked_id=user_id))
-
 
 @router.delete("/block/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def unblock_user(user_id: str, db: DbSession, me: CurrentUser) -> None:

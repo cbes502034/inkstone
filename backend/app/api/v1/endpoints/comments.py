@@ -3,8 +3,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import CurrentUser, DbSession, OptionalUser
-from app.models import Comment, Notification, NotificationKind, Post
+from app.models import Comment, NotificationKind, Post
 from app.schemas.post import CommentIn, CommentOut
+from app.services import notify
+from app.services.realtime import hub
 from app.services.serializers import user_public
 from app.utils.markup import excerpt
 
@@ -52,20 +54,23 @@ async def create_comment(
     post.comment_count += 1
     await db.flush()
 
-    # 不通知自己在自己文章下的留言
-    if post.author_id != me.id:
-        db.add(
-            Notification(
-                user_id=post.author_id,
-                actor_id=me.id,
-                kind=NotificationKind.post_commented,
-                href=f"/post/{post_id}",
-                preview=excerpt(comment.body, 80),
-            )
-        )
-
     comment.author = me
-    return _out(comment, me.id)
+    result = _out(comment, me.id)
+
+    # 即時推給文章作者
+    await notify.create(
+        db,
+        user_id=post.author_id,
+        actor=me,
+        kind=NotificationKind.post_commented,
+        href=f"/post/{post_id}",
+        preview=excerpt(comment.body, 80),
+    )
+
+    # 正在看這篇文章的人也要即時看到新留言
+    await hub.send_to(post.author_id, "comment", result.model_dump(mode="json"))
+
+    return result
 
 
 @router.delete("/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)

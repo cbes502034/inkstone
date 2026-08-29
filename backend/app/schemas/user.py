@@ -39,12 +39,11 @@ class UserWithRelation(UserPublic):
     postCount: int
 
 
-class RegisterIn(BaseModel):
+class RegisterStartIn(BaseModel):
+    """第一步：只要帳號與信箱。這時候還不建立使用者。"""
+
     username: str
-    displayName: str = Field(min_length=1, max_length=60)
     email: EmailStr
-    password: str = Field(min_length=8, max_length=128)
-    avatarDataUrl: str | None = None
 
     @field_validator("username")
     @classmethod
@@ -52,6 +51,36 @@ class RegisterIn(BaseModel):
         if not USERNAME_RE.match(v):
             raise ValueError("帳號只能用 3~32 個英數字或底線")
         return v.lower()
+
+
+class RegisterStartOut(BaseModel):
+    # 一律回同樣的訊息，不透露這個帳號或信箱是不是已經被用了 ——
+    # 否則這支 API 就成了帳號與信箱的探測工具
+    message: str = "驗證信已寄出，請到信箱點擊連結完成註冊"
+    # 只在開發環境帶回連結，讓本機不必接 SMTP 也能走完流程
+    devLink: str | None = None
+
+
+class RegisterCheckOut(BaseModel):
+    """點開連結時先問後端這張票有沒有效，才決定要不要顯示設定密碼的畫面。"""
+
+    username: str
+    email: EmailStr
+
+
+class RegisterCompleteIn(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+    confirmPassword: str
+    avatarDataUrl: str | None = None
+
+    @field_validator("confirmPassword")
+    @classmethod
+    def _passwords_match(cls, v: str, info) -> str:
+        # 後端也要驗一次。前端的即時比對只是體驗，擋不住直接打 API
+        if v != (info.data or {}).get("password"):
+            raise ValueError("兩次輸入的密碼不一致")
+        return v
 
 
 class LoginIn(BaseModel):

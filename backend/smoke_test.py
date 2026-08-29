@@ -8,12 +8,19 @@
     .venv/Scripts/python.exe smoke_test.py
 """
 
+import os
 import sys
 import uuid
 
 import httpx
 
-BASE = "http://127.0.0.1:8000/api/v1"
+# 預設打本機；要驗證正式環境就傳網址進來：
+#     python smoke_test.py https://<你的後端>/api/v1
+BASE = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else os.getenv("INKSTONE_API", "http://127.0.0.1:8000/api/v1")
+).rstrip("/")
 
 passed = 0
 failed: list[str] = []
@@ -29,42 +36,84 @@ def check(label: str, ok: bool, extra: str = "") -> None:
         print(f"  [FAIL] {label} {extra}")
 
 
+def register(c, tag: str, name: str, display: str) -> dict:
+    """
+    走完兩階段註冊。
+
+    開發環境的 register/start 會把驗證連結帶回來（正式環境不會），
+    測試才不用真的去收信。
+    """
+    r = c.post(
+        "/auth/register/start",
+        json={"username": f"{name}_{tag}", "email": f"{name}_{tag}@example.com"},
+    )
+    assert r.status_code == 200, r.text[:200]
+    link = r.json().get("devLink")
+    assert link, "沒有拿到 devLink —— 正式環境無法用這支測試跑註冊"
+    token = link.split("token=")[1]
+
+    r = c.post(
+        "/auth/register/complete",
+        json={"token": token, "password": "sup3rsecret!", "confirmPassword": "sup3rsecret!"},
+    )
+    assert r.status_code == 201, r.text[:200]
+    return r.json()
+
+
 def main() -> int:
-    c = httpx.Client(base_url=BASE, timeout=30.0)
+    print(f"目標：{BASE}")
+    # 免費方案冷啟動可能要 50 秒以上，逾時放寬
+    c = httpx.Client(base_url=BASE, timeout=120.0)
     tag = uuid.uuid4().hex[:8]
 
     print("\n— 註冊與登入 —")
-    r = c.post(
-        "/auth/register",
-        json={
-            "username": f"alice_{tag}",
-            "displayName": "測試 Alice",
-            "email": f"alice_{tag}@example.com",
-            "password": "sup3rsecret!",
-        },
-    )
-    check("註冊", r.status_code == 201, r.text[:200])
-    alice = r.json()
+    alice = register(c, tag, "alice", "測試 Alice")
+    check("兩階段註冊", bool(alice.get("accessToken")))
     a_tok = {"Authorization": f"Bearer {alice['accessToken']}"}
 
-    r = c.post(
-        "/auth/register",
-        json={
-            "username": f"bob_{tag}",
-            "displayName": "測試 Bob",
-            "email": f"bob_{tag}@example.com",
-            "password": "sup3rsecret!",
-        },
-    )
-    check("第二個帳號", r.status_code == 201, r.text[:200])
-    bob = r.json()
+    bob = register(c, tag, "bob", "測試 Bob")
+    check("第二個帳號", bool(bob.get("accessToken")))
     b_tok = {"Authorization": f"Bearer {bob['accessToken']}"}
 
-    r = c.post("/auth/register", json={
-        "username": f"alice_{tag}", "displayName": "重複",
-        "email": f"dup_{tag}@example.com", "password": "sup3rsecret!",
+    # 已註冊的帳號再送出：一律回同樣訊息且不寄信，避免變成帳號探測工具
+    r = c.post("/auth/register/start", json={
+        "username": f"alice_{tag}", "email": f"other_{tag}@example.com",
     })
-    check("重複帳號被擋", r.status_code == 409, str(r.status_code))
+    check("重複帳號不透露", r.status_code == 200 and r.json().get("devLink") is None,
+          r.text[:150])
+
+    # 驗證連結是一次性的
+    r = c.post("/auth/register/start", json={
+        "username": f"carol_{tag}", "email": f"carol_{tag}@example.com",
+    })
+    once = r.json()["devLink"].split("token=")[1]
+    r = c.post("/auth/register/complete", json={
+        "token": once, "password": "sup3rsecret!", "confirmPassword": "sup3rsecret!",
+    })
+    check("首次使用連結成功", r.status_code == 201, r.text[:150])
+    r = c.post("/auth/register/complete", json={
+        "token": once, "password": "sup3rsecret!", "confirmPassword": "sup3rsecret!",
+    })
+    check("同一條連結不能用第二次", r.status_code == 400, str(r.status_code))
+
+    # 密碼不一致要擋下來
+    r = c.post("/auth/register/start", json={
+        "username": f"dave_{tag}", "email": f"dave_{tag}@example.com",
+    })
+    t2 = r.json()["devLink"].split("token=")[1]
+    r = c.post("/auth/register/complete", json={
+        "token": t2, "password": "sup3rsecret!", "confirmPassword": "different!",
+    })
+    check("密碼不一致被擋", r.status_code == 422, str(r.status_code))
+
+    r = c.post("/auth/register/complete", json={
+        "token": "not-a-real-token", "password": "sup3rsecret!",
+        "confirmPassword": "sup3rsecret!",
+    })
+    check("偽造的驗證連結被擋", r.status_code == 400, str(r.status_code))
+
+    r = c.get("/auth/register/check", params={"token": t2})
+    check("查詢票證有效", r.status_code == 200 and "username" in r.json(), r.text[:150])
 
     r = c.post("/auth/login", json={"account": f"alice_{tag}", "password": "wrong"})
     check("密碼錯誤被擋", r.status_code == 401, str(r.status_code))
@@ -158,7 +207,7 @@ def main() -> int:
     r = c.post("/conversations/direct", headers=a_tok, json={"userId": bob["user"]["id"]})
     check("開一對一對話", r.status_code == 200, r.text[:200])
     conv = r.json()
-    check("對話名稱是對方", conv["name"] == "測試 Bob", conv.get("name"))
+    check("對話名稱是對方", conv["name"] == bob["user"]["displayName"], conv.get("name"))
 
     r = c.post("/conversations/direct", headers=b_tok, json={"userId": alice["user"]["id"]})
     check("反向開啟拿到同一個對話", r.json()["id"] == conv["id"], r.text[:150])
@@ -173,11 +222,7 @@ def main() -> int:
     check("對方讀得到", len(r.json()) == 1 and r.json()[0]["isMine"] is False, r.text[:200])
 
     # 第三個帳號不該讀得到別人的對話
-    r = c.post("/auth/register", json={
-        "username": f"eve_{tag}", "displayName": "路人 Eve",
-        "email": f"eve_{tag}@example.com", "password": "sup3rsecret!",
-    })
-    eve = r.json()
+    eve = register(c, tag, "eve", "路人 Eve")
     eve_tok = {"Authorization": f"Bearer {eve['accessToken']}"}
     r = c.get(f"/conversations/{conv['id']}/messages", headers=eve_tok)
     check("非成員讀不到對話", r.status_code == 404, str(r.status_code))

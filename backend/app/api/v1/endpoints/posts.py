@@ -5,8 +5,9 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import CurrentUser, DbSession, OptionalUser
-from app.models import Post, PostLike, PostTag, User
+from app.models import NotificationKind, Post, PostLike, PostTag, User
 from app.schemas.post import LikeOut, LikersOut, Page, PostIn, PostOut, SearchOut
+from app.services import notify
 from app.services.serializers import post_out, user_public
 from app.utils.markup import extract_tags
 
@@ -168,6 +169,17 @@ async def like_post(post_id: str, db: DbSession, me: CurrentUser) -> LikeOut:
     if existing is None:
         db.add(PostLike(post_id=post_id, user_id=me.id))
         post.like_count += 1
+        await db.flush()
+
+        # 只在「第一次按讚」時通知。取消再按不該重複打擾對方
+        await notify.create(
+            db,
+            user_id=post.author_id,
+            actor=me,
+            kind=NotificationKind.post_liked,
+            href=f"/post/{post_id}",
+            preview=f"喜歡你的〈{post.title}〉",
+        )
 
     return LikeOut(likeCount=post.like_count, likedByMe=True)
 

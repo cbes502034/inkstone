@@ -70,9 +70,28 @@ async def http_error_handler(_: Request, exc: StarletteHTTPException) -> JSONRes
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """
+    只取出能安全序列化的欄位。
+
+    自訂驗證器丟 ValueError 時，exc.errors() 的 ctx 會夾帶「原始的例外物件」，
+    直接塞進 JSONResponse 會讓這個處理器本身爆掉，變成 500 ——
+    使用者看到的就不是「密碼不一致」而是「伺服器發生問題」。
+
+    input 也一併排除：那是使用者送來的原始值，密碼欄位會原封不動被回傳出去。
+    """
+    details = [
+        {
+            "field": ".".join(str(p) for p in err.get("loc", ()) if p != "body"),
+            "message": err.get("msg", ""),
+            "type": err.get("type", ""),
+        }
+        for err in exc.errors()
+    ]
+    # 只有一個錯誤時直接把它當主訊息，前端不用再翻 details 才知道哪裡錯
+    message = details[0]["message"] if len(details) == 1 else "送出的資料格式不正確"
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content=_error("VALIDATION_ERROR", "送出的資料格式不正確", exc.errors()),
+        content=_error("VALIDATION_ERROR", message, details),
     )
 
 

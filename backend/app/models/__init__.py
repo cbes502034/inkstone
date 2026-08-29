@@ -14,6 +14,7 @@ from app.models.chat import (
     Notification,
     NotificationKind,
 )
+from app.models.pending import PendingRegistration
 from app.models.post import Post, PostLike, PostTag
 from app.models.social import (
     Block,
@@ -27,6 +28,7 @@ from app.models.user import User
 
 __all__ = [
     "User",
+    "PendingRegistration",
     "Post",
     "PostTag",
     "PostLike",
