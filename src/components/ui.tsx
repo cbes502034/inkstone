@@ -64,7 +64,7 @@ export function Field({ label, hint, error, id, className = '', ...rest }: Field
       <input
         id={inputId}
         {...rest}
-        className={`w-full rounded-xl border bg-paper-raised px-3.5 py-2.5 text-[15px]
+        className={`w-full rounded-xl border bg-surface-solid px-3.5 py-2.5 text-[15px]
                     outline-none transition-colors placeholder:text-ink-faint
                     focus:border-accent
                     ${error ? 'border-accent' : 'border-rule'} ${className}`}
