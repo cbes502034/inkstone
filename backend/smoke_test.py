@@ -291,6 +291,60 @@ def main() -> int:
         "token": reset_token, "password": "again!!!!", "confirmPassword": "again!!!!",
     })
     check("重設連結不能用第二次", r.status_code == 400, str(r.status_code))
+    print("\n— 檢舉與封鎖 —")
+    r = c.post("/reports", headers=b_tok, json={
+        "targetType": "post", "targetId": post["id"], "reason": "垃圾訊息",
+    })
+    check("檢舉文章", r.status_code == 204, r.text[:150])
+
+    r = c.post("/reports", headers=b_tok, json={
+        "targetType": "post", "targetId": post["id"], "reason": "再檢舉一次",
+    })
+    check("重複檢舉不報錯", r.status_code == 204, str(r.status_code))
+
+    r = c.post("/reports", headers=a_tok, json={
+        "targetType": "user", "targetId": alice["user"]["id"], "reason": "測試",
+    })
+    check("不能檢舉自己", r.status_code == 400, str(r.status_code))
+
+    r = c.post("/reports", headers=a_tok, json={
+        "targetType": "post", "targetId": "does-not-exist", "reason": "測試",
+    })
+    check("檢舉不存在的對象被擋", r.status_code == 404, str(r.status_code))
+
+    r = c.post("/reports", headers=a_tok, json={
+        "targetType": "nonsense", "targetId": post["id"], "reason": "測試",
+    })
+    check("無效的檢舉類型被擋", r.status_code == 422, str(r.status_code))
+
+    # 留言刪除：文章作者可以刪自己文章底下別人的留言
+    r = c.post(f"/posts/{post['id']}/comments", headers=b_tok, json={"body": "待刪"})
+    doomed = r.json()["id"]
+    r = c.delete(f"/comments/{doomed}", headers=eve_tok)
+    check("無關的人不能刪留言", r.status_code == 403, str(r.status_code))
+    r = c.delete(f"/comments/{doomed}", headers=a_tok)
+    check("文章作者可刪自己文章下的留言", r.status_code == 204, str(r.status_code))
+
+    # 封鎖
+    r = c.post(f"/friends/block/{eve['user']['id']}", headers=a_tok)
+    check("封鎖", r.status_code == 204, r.text[:150])
+
+    r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
+    check("封鎖後狀態變 blocked", r.json()["friendState"] == "blocked", r.text[:150])
+
+    r = c.post("/conversations/direct", headers=a_tok,
+               json={"userId": eve["user"]["id"]})
+    check("封鎖後不能開對話", r.status_code == 403, str(r.status_code))
+
+    r = c.post("/friends/requests", headers=a_tok,
+               params={"toUserId": eve["user"]["id"]})
+    check("封鎖後不能邀請好友", r.status_code == 403, str(r.status_code))
+
+    r = c.delete(f"/friends/block/{eve['user']['id']}", headers=a_tok)
+    check("解除封鎖", r.status_code == 204, str(r.status_code))
+
+    r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
+    check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
     print("\n— 錯誤格式 —")
     r = c.get("/posts/does-not-exist", headers=a_tok)
     check("404 統一格式", r.status_code == 404 and "error" in r.json(), r.text[:150])

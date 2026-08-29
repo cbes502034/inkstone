@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Heart, PencilLine, Trash2 } from 'lucide-react'
+import { ArrowLeft, Flag, Heart, PencilLine, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { LikersSheet } from '../components/LikersSheet'
+import { ReportDialog } from '../components/ReportDialog'
 import { PostBody } from '../components/PostBody'
 import { Button, FadeIn, Skeleton } from '../components/ui'
 import { comments, posts } from '../lib/api'
@@ -18,6 +19,8 @@ export function PostDetail() {
   const { user } = useAuth()
   const [draft, setDraft] = useState('')
   const [showLikers, setShowLikers] = useState(false)
+  const [reportPost, setReportPost] = useState(false)
+  const [reportComment, setReportComment] = useState<string | null>(null)
 
   const { data: post, isLoading } = useQuery({
     queryKey: ['post', id],
@@ -52,6 +55,14 @@ export function PostDetail() {
     mutationFn: (body: string) => comments.create(id, body),
     onSuccess: () => {
       setDraft('')
+      qc.invalidateQueries({ queryKey: ['comments', id] })
+      qc.invalidateQueries({ queryKey: ['post', id] })
+    },
+  })
+
+  const removeComment = useMutation({
+    mutationFn: (commentId: string) => comments.remove(commentId),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['comments', id] })
       qc.invalidateQueries({ queryKey: ['post', id] })
     },
@@ -124,6 +135,17 @@ export function PostDetail() {
                 )}
               </p>
             </div>
+
+            {!post.isMine && (
+              <button
+                onClick={() => setReportPost(true)}
+                aria-label="檢舉這篇文章"
+                title="檢舉這篇文章"
+                className="press grid size-9 shrink-0 place-items-center rounded-full text-ink-faint transition-colors hover:bg-paper-sunk hover:text-ink"
+              >
+                <Flag size={16} />
+              </button>
+            )}
 
             {post.isMine && (
               <div className="flex shrink-0 items-center gap-1">
@@ -225,7 +247,7 @@ export function PostDetail() {
 
           <div className="flex flex-col gap-6">
             {list?.map((c) => (
-              <div key={c.id} className="flex gap-3">
+              <div key={c.id} className="group flex gap-3">
                 <Link to={`/u/${c.author.username}`} className="shrink-0">
                   <Avatar user={c.author} size={36} />
                 </Link>
@@ -240,6 +262,39 @@ export function PostDetail() {
                     <span className="text-ink-faint">
                       {relativeTime(c.createdAt)}
                     </span>
+
+                    {/* 自己的留言可刪；文章作者也能刪自己文章底下的留言。
+                        真正的權限判斷在後端，這裡只決定顯不顯示按鈕。
+                        手機沒有 hover，所以小螢幕一律顯示。 */}
+                    {(c.isMine || post.isMine) && (
+                      <button
+                        onClick={() => {
+                          if (confirm('刪除這則留言？')) removeComment.mutate(c.id)
+                        }}
+                        aria-label="刪除留言"
+                        className="press ml-auto grid size-7 shrink-0 place-items-center
+                                   rounded-full text-ink-faint opacity-0 transition-all
+                                   hover:bg-accent-wash hover:text-accent
+                                   focus-visible:opacity-100 group-hover:opacity-100
+                                   max-md:opacity-100"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+
+                    {!c.isMine && (
+                      <button
+                        onClick={() => setReportComment(c.id)}
+                        aria-label="檢舉留言"
+                        className="press grid size-7 shrink-0 place-items-center rounded-full
+                                   text-ink-faint opacity-0 transition-all
+                                   hover:bg-paper-sunk hover:text-ink
+                                   focus-visible:opacity-100 group-hover:opacity-100
+                                   max-md:opacity-100"
+                      >
+                        <Flag size={13} />
+                      </button>
+                    )}
                   </div>
                   <p className="mt-1 text-[15px] leading-relaxed text-ink-soft">
                     {c.body}
@@ -255,6 +310,20 @@ export function PostDetail() {
         postId={id}
         open={showLikers}
         onClose={() => setShowLikers(false)}
+      />
+
+      <ReportDialog
+        open={reportPost}
+        onClose={() => setReportPost(false)}
+        targetType="post"
+        targetId={id}
+      />
+
+      <ReportDialog
+        open={reportComment !== null}
+        onClose={() => setReportComment(null)}
+        targetType="comment"
+        targetId={reportComment ?? ''}
       />
     </div>
   )

@@ -299,9 +299,13 @@ export function RegisterVerify() {
 
         <p className="text-center text-[12px] leading-relaxed text-ink-faint">
           完成註冊即表示你同意
-          <a href="#" className="mx-1 underline hover:text-ink-soft">服務條款</a>
+          <Link to="/terms" className="mx-1 underline hover:text-ink-soft">
+            服務條款
+          </Link>
           與
-          <a href="#" className="mx-1 underline hover:text-ink-soft">隱私權政策</a>
+          <Link to="/privacy" className="mx-1 underline hover:text-ink-soft">
+            隱私權政策
+          </Link>
         </p>
       </form>
     </Frame>

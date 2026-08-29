@@ -240,6 +240,19 @@ export const friends = {
   },
 }
 
+// ================================================================ 檢舉與封鎖
+
+export const moderation = {
+  /** POST /reports —— 只留紀錄不自動下架，避免檢舉被當成攻擊工具 */
+  report(input: {
+    targetType: 'post' | 'comment' | 'user'
+    targetId: ID
+    reason: string
+  }): Promise<void> {
+    return http.post<void>('/reports', input)
+  },
+}
+
 // ================================================================ 聊天
 
 export const chat = {

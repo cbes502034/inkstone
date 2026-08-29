@@ -1,8 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Check, Clock, MessageCircle, UserPlus } from 'lucide-react'
+import {
+  ArrowLeft,
+  Ban,
+  Check,
+  Clock,
+  Flag,
+  MessageCircle,
+  MoreHorizontal,
+  ShieldOff,
+  UserPlus,
+} from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { PostCard } from '../components/PostCard'
+import { ReportDialog } from '../components/ReportDialog'
 import { Button, EmptyState, FadeIn, PostSkeleton, Skeleton } from '../components/ui'
 import { chat, friends, posts } from '../lib/api'
 import { presenceText } from '../lib/presence'
@@ -32,9 +45,22 @@ export function UserProfile() {
     enabled: Boolean(user),
   })
 
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [reporting, setReporting] = useState(false)
+
   const refresh = () => qc.invalidateQueries({ queryKey: ['user', username] })
   const invite = useMutation({ mutationFn: friends.invite, onSuccess: refresh })
   const accept = useMutation({ mutationFn: friends.accept, onSuccess: refresh })
+
+  const block = useMutation({
+    mutationFn: friends.block,
+    onSuccess: () => {
+      refresh()
+      // 封鎖同時解除好友關係，好友列表要跟著更新
+      qc.invalidateQueries({ queryKey: ['friends'] })
+    },
+  })
+  const unblock = useMutation({ mutationFn: friends.unblock, onSuccess: refresh })
 
   const openChat = useMutation({
     mutationFn: () => chat.openDirect(user!.id),
@@ -124,12 +150,104 @@ export function UserProfile() {
             </span>
           )}
 
-          <Button variant="outline" onClick={() => openChat.mutate()} loading={openChat.isPending}>
-            <MessageCircle size={16} />
-            傳訊息
-          </Button>
+          {user.friendState !== 'blocked' && (
+            <Button
+              variant="outline"
+              onClick={() => openChat.mutate()}
+              loading={openChat.isPending}
+            >
+              <MessageCircle size={16} />
+              傳訊息
+            </Button>
+          )}
+
+          {/* 檢舉與封鎖收在選單裡 —— 這是少用但必須有的功能，
+              放在主要位置會讓每次拜訪別人的頁面都看到「封鎖」，觀感不好 */}
+          <div className="relative ml-auto">
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="更多"
+              aria-expanded={menuOpen}
+              className="press grid size-9 place-items-center rounded-full text-ink-soft transition-colors hover:bg-paper-sunk hover:text-ink"
+            >
+              <MoreHorizontal size={18} />
+            </button>
+
+            <AnimatePresence>
+              {menuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-30"
+                    onClick={() => setMenuOpen(false)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.96, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.96, y: -4 }}
+                    transition={{ duration: 0.14 }}
+                    className="absolute right-0 top-11 z-40 w-44 overflow-hidden rounded-xl
+                               border border-rule bg-paper-raised py-1 shadow-xl backdrop-blur-xl"
+                  >
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setReporting(true)
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-ink-soft transition-colors hover:bg-paper-sunk hover:text-ink"
+                    >
+                      <Flag size={15} />
+                      檢舉這個人
+                    </button>
+
+                    {user.friendState === 'blocked' ? (
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false)
+                          unblock.mutate(user.id)
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-ink-soft transition-colors hover:bg-paper-sunk hover:text-ink"
+                      >
+                        <ShieldOff size={15} />
+                        解除封鎖
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false)
+                          if (
+                            confirm(
+                              `封鎖 ${user.displayName}？\n\n你們會解除好友關係，雙方都無法再傳訊息或邀請對方。`,
+                            )
+                          ) {
+                            block.mutate(user.id)
+                          }
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-accent transition-colors hover:bg-accent-wash"
+                      >
+                        <Ban size={15} />
+                        封鎖
+                      </button>
+                    )}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
+
+        {user.friendState === 'blocked' && (
+          <p className="mt-4 rounded-xl border border-rule bg-paper-sunk px-4 py-3 text-[13px] leading-relaxed text-ink-soft">
+            你已經封鎖了這個人。你們無法互相傳訊息或邀請好友。
+          </p>
+        )}
       </FadeIn>
+
+      <ReportDialog
+        open={reporting}
+        onClose={() => setReporting(false)}
+        targetType="user"
+        targetId={user.id}
+      />
 
       <h2 className="px-5 pb-1 pt-6 text-[13px] font-medium text-ink-faint sm:px-8">
         文章
