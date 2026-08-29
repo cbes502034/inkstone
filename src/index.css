@@ -1,0 +1,302 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------
+   硯 Inkstone — 夜空設計系統
+
+   以黑為主調。背景是一片深夜天空，內容浮在上面。
+   刻意避開高對比的密集小點 —— 那種高頻噪訊跟中文筆畫的空間頻率太接近，
+   會直接吃掉可讀性。星光一律做成大而柔的光暈，背景主體交給低對比的星雲漸層。
+------------------------------------------------------------------- */
+
+@theme {
+  /* 夜 — 頁面最底層，不透明 */
+  --color-void: #05060a;
+
+  /* 浮層 — 半透明，星光經過背景模糊後化成柔暈透出來。
+     底色夠深，就算透出星光，文字對比仍在 15:1 以上，讀起來不吃力 */
+  --color-paper: rgba(11, 13, 19, 0.6);
+  --color-paper-raised: rgba(16, 18, 26, 0.7);
+  --color-paper-sunk: rgba(255, 255, 255, 0.05);
+
+  /* 字 */
+  --color-ink: #eceef4;
+  --color-ink-soft: #a7adbd;
+  --color-ink-faint: #6e7486;
+
+  /* 界線 */
+  --color-rule: rgba(255, 255, 255, 0.08);
+  --color-rule-strong: rgba(255, 255, 255, 0.17);
+
+  /* 星藍 — 主色。整站只有黑、白、藍三色，這是唯一的彩色 */
+  --color-accent: #6c9ffb;
+  --color-accent-hover: #86b2fd;
+  --color-accent-wash: rgba(108, 159, 251, 0.15);
+
+  /* 上線狀態 — 仍在藍色家族，但偏青才分得出來 */
+  --color-online: #5ecfd6;
+  --color-online-wash: rgba(94, 207, 214, 0.14);
+
+  /* 字體 */
+  --font-serif: 'Noto Serif TC', 'Songti TC', 'PMingLiU', Georgia, serif;
+  --font-sans: 'Noto Sans TC', -apple-system, 'Segoe UI', 'PingFang TC',
+    'Microsoft JhengHei', sans-serif;
+
+  --ease-paper: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --breakpoint-xs: 360px;
+}
+
+/* 晨曦 — 備選的淺色，星光褪去只剩天光 */
+:root[data-theme='light'] {
+  --color-void: #f4f5fa;
+
+  --color-paper: rgba(255, 255, 255, 0.78);
+  --color-paper-raised: rgba(255, 255, 255, 0.9);
+  --color-paper-sunk: rgba(20, 24, 40, 0.05);
+
+  --color-ink: #14182a;
+  --color-ink-soft: #4a5165;
+  --color-ink-faint: #868c9e;
+
+  --color-rule: rgba(20, 24, 40, 0.1);
+  --color-rule-strong: rgba(20, 24, 40, 0.2);
+
+  --color-accent: #2f6ad9;
+  --color-accent-hover: #2557b8;
+  --color-accent-wash: rgba(47, 106, 217, 0.1);
+
+  --color-online: #1d8d97;
+  --color-online-wash: rgba(29, 141, 151, 0.12);
+}
+
+/* ------------------------------------------------------------------
+   基礎樣式必須放在 @layer base。
+   未分層的 CSS 會蓋過所有分層樣式（與權重無關），若把 button 的
+   color: inherit 寫在層外，全站按鈕上的 text-* 顏色類別都會失效。
+------------------------------------------------------------------- */
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    background-color: var(--color-void);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: 1.75;
+    letter-spacing: 0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+
+    /* 星雲 —— 大尺度、低對比的色霧。負責氣氛，不製造噪訊 */
+    background-color: var(--color-void);
+    background-image:
+      radial-gradient(
+        58rem 40rem at 8% -6%,
+        rgba(64, 96, 190, 0.38),
+        transparent 62%
+      ),
+      radial-gradient(
+        46rem 34rem at 92% 4%,
+        rgba(96, 74, 170, 0.3),
+        transparent 60%
+      ),
+      radial-gradient(
+        40rem 30rem at 78% 46%,
+        rgba(40, 92, 160, 0.22),
+        transparent 62%
+      ),
+      radial-gradient(
+        68rem 44rem at 42% 106%,
+        rgba(46, 78, 158, 0.3),
+        transparent 64%
+      );
+    background-attachment: fixed;
+  }
+
+  :root[data-theme='light'] body {
+    background-image:
+      radial-gradient(
+        62rem 42rem at 12% -8%,
+        rgba(140, 160, 230, 0.3),
+        transparent 62%
+      ),
+      radial-gradient(
+        54rem 38rem at 88% 6%,
+        rgba(226, 178, 190, 0.28),
+        transparent 60%
+      ),
+      radial-gradient(
+        70rem 46rem at 50% 108%,
+        rgba(160, 180, 235, 0.26),
+        transparent 64%
+      );
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-serif);
+    line-height: 1.35;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-rule-strong);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-faint);
+    background-clip: content-box;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-accent-wash);
+    color: var(--color-ink);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* ---------------------------------------------------------------
+     滑鼠 — 星芒。
+     只在有精準指標的裝置上換掉游標；觸控裝置沒有游標，換了只會出事。
+     輸入類元素維持原生 I 形游標，不影響打字時的定位。
+  ---------------------------------------------------------------- */
+  @media (pointer: fine) {
+    body {
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 1C11.6 7.4 14.6 10.4 21 11C14.6 11.6 11.6 14.6 11 21C10.4 14.6 7.4 11.6 1 11C7.4 10.4 10.4 7.4 11 1Z' fill='%23ffffff' stroke='%23000000' stroke-opacity='0.35' stroke-width='0.6'/%3E%3C/svg%3E")
+          11 11,
+        auto;
+    }
+
+    :root[data-theme='light'] body {
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 1C11.6 7.4 14.6 10.4 21 11C14.6 11.6 11.6 14.6 11 21C10.4 14.6 7.4 11.6 1 11C7.4 10.4 10.4 7.4 11 1Z' fill='%2314182a' stroke='%23ffffff' stroke-opacity='0.6' stroke-width='0.6'/%3E%3C/svg%3E")
+          11 11,
+        auto;
+    }
+
+    a,
+    button,
+    [role='button'],
+    [role='switch'],
+    label,
+    summary {
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cpath d='M13 1.5C13.7 8.6 17.4 12.3 24.5 13C17.4 13.7 13.7 17.4 13 24.5C12.3 17.4 8.6 13.7 1.5 13C8.6 12.3 12.3 8.6 13 1.5Z' fill='%236c9ffb'/%3E%3C/svg%3E")
+          13 13,
+        pointer;
+    }
+
+    input,
+    textarea,
+    [contenteditable='true'] {
+      cursor: text;
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   共用工具
+------------------------------------------------------------------- */
+
+@utility press {
+  transition: transform 140ms var(--ease-paper);
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+/**
+ * 閱讀欄。
+ *
+ * 一整條連續的霧面底，不是一塊塊卡片 —— 文字永遠落在乾淨的底上，
+ * 星空則在兩側留白處保持通透。這是可讀性的保險。
+ */
+@utility reading-surface {
+  background-color: var(--color-paper);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.28;
+  }
+}
+
+@utility skeleton {
+  background: var(--color-rule);
+  border-radius: 4px;
+  animation: breathe 1.8s ease-in-out infinite;
+}
+
+@utility prose-ink {
+  font-size: 1.0625rem;
+  line-height: 1.95;
+  color: var(--color-ink-soft);
+
+  & p {
+    margin: 0 0 1.35em;
+  }
+  & p:last-child {
+    margin-bottom: 0;
+  }
+  & strong {
+    color: var(--color-ink);
+    font-weight: 700;
+  }
+}
