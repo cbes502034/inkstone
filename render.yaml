@@ -50,8 +50,8 @@ services:
   # ---------------------------------------------------------------- 前端
   - type: web
     name: inkstone-web
+    # 靜態網站由全球 CDN 供應，不能也不需要指定 region
     runtime: static
-    region: singapore
     rootDir: .
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
