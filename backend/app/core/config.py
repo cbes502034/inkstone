@@ -91,9 +91,13 @@ class Settings(BaseSettings):
     RESET_TTL_MINUTES: int = 15
     RESET_RESEND_COOLDOWN_SECONDS: int = 60
 
-    # --- SMTP ---
-    # 留空就不寄信，改把驗證連結寫進日誌（本機開發用）。
-    # Gmail、Brevo、Resend、Mailgun 都支援 SMTP，換供應商只要改這幾個值。
+    # --- 寄信 ---
+    # 正式環境用 HTTPS API，不要用 SMTP：Render、Heroku 這類平台
+    # 封鎖對外的 SMTP 連接埠（25/465/587），錯誤訊息還會偽裝成網路問題。
+    BREVO_API_KEY: str = ""
+    RESEND_API_KEY: str = ""
+
+    # SMTP 保留給本機或不封鎖連接埠的環境
     SMTP_HOST: str = ""
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
@@ -145,6 +149,22 @@ class Settings(BaseSettings):
     @property
     def smtp_configured(self) -> bool:
         return bool(self.SMTP_HOST and self.SMTP_USER and self.SMTP_PASSWORD)
+
+    @property
+    def email_provider(self) -> str:
+        """
+        依設定挑選寄信通道。
+
+        HTTPS API 優先於 SMTP —— 雲端平台大多封鎖 SMTP 連接埠，
+        而 443 埠不會被擋。
+        """
+        if self.BREVO_API_KEY:
+            return "brevo"
+        if self.RESEND_API_KEY:
+            return "resend"
+        if self.smtp_configured:
+            return "smtp"
+        return "none"
 
     @property
     def is_pgbouncer(self) -> bool:

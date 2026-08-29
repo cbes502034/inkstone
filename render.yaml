@@ -52,18 +52,18 @@ services:
       - key: FRONTEND_URL
         value: https://inkstone-web.onrender.com
 
-      # 寄信（Gmail SMTP）。SMTP_PASSWORD 是「應用程式密碼」不是登入密碼，
-      # 要在 Google 帳戶開兩步驟驗證後另外產生，只填在後台不進版控。
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER
-        value: cbes502034@gmail.com
+      # 寄信。
+      #
+      # 不能用 SMTP —— Render 封鎖對外的 SMTP 連接埠（25/465/587）來防垃圾郵件，
+      # 不管帳密多正確都會得到 OSError: Network is unreachable。
+      # 必須用走 HTTPS 的寄信 API。
+      #
+      # Brevo 免費方案每天 300 封，只要驗證寄件信箱、不需要自有網域，
+      # 對還沒有網域的專案最合適。金鑰只填在後台。
+      - key: BREVO_API_KEY
+        sync: false
       - key: MAIL_FROM
         value: cbes502034@gmail.com
-      - key: SMTP_PASSWORD
-        sync: false
 
   # ---------------------------------------------------------------- 前端
   - type: web

@@ -23,6 +23,15 @@ async def lifespan(app: FastAPI):
     # 只記形狀不記內容。連線出問題時這一行就能定位，
     # 不必等 SQLAlchemy 把密碼碎片吐進日誌
     log.info("資料庫設定：%s", settings.describe_database_url())
+    log.info("寄信通道：%s", settings.email_provider)
+    if settings.ENV == "prod" and settings.email_provider == "smtp":
+        # 這種組合在 Render 上一定寄不出去，先警告免得使用者收不到信才發現
+        log.warning(
+            "正式環境使用 SMTP —— Render、Heroku 這類平台封鎖對外的 SMTP 連接埠，"
+            "信很可能寄不出去。建議改用 Brevo 或 Resend 的 HTTPS API。"
+        )
+    if settings.ENV == "prod" and settings.email_provider == "none":
+        log.warning("沒有設定寄信通道，正式環境將無法註冊新帳號")
 
     # 本機用 SQLite 時直接建表，clone 下來就能跑。
     # 正式環境走 Alembic migration，不在啟動時改結構 ——

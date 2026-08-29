@@ -25,7 +25,34 @@ postgresql://postgres.<專案ref>:<密碼>@aws-0-<區域>.pooler.supabase.com:54
 但建置環境的環境變數不保證已就緒，而且建置階段本來就不該連生產資料庫。
 現在已移到 `startCommand`。
 
-### 3. Transaction pooler 的 prepared statement 問題
+### 3. Render 封鎖對外的 SMTP 連接埠
+
+Gmail SMTP 在 Render 上**永遠不會通**，不管帳號密碼多正確：
+
+```
+OSError: [Errno 101] Network is unreachable
+```
+
+這個訊息看起來像網路問題，實際上是平台政策 —— Render、Heroku、Vercel
+這類平台都封鎖對外的 25 / 465 / 587 埠來防垃圾郵件。
+
+**要用走 HTTPS 的寄信 API（443 埠不會被擋）。**
+
+| 服務 | 免費額度 | 需要自有網域 |
+|---|---|---|
+| **Brevo** | 300 封/天 | ❌ 只要驗證寄件信箱 |
+| Resend | 3000 封/月 | ✅ 要驗證網域才能寄給任意收件者 |
+
+沒有自有網域的話用 **Brevo**。設定：
+
+1. 註冊 <https://www.brevo.com>
+2. 到 **Senders & IP** 新增並驗證寄件信箱（用你的 Gmail 即可）
+3. 到 **SMTP & API → API Keys** 產生一組金鑰
+4. 填進 Render 的 `BREVO_API_KEY`，`MAIL_FROM` 設成剛才驗證過的信箱
+
+程式會自動選擇通道，優先序是 Brevo → Resend → SMTP → 只寫進日誌。
+
+### 4. Transaction pooler 的 prepared statement 問題
 
 如果用 6543 埠（Transaction 模式），asyncpg 的 prepared statement 快取會失效，
 出現 `prepared statement _asyncpg_xx does not exist`。

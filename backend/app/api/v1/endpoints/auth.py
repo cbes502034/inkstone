@@ -132,7 +132,7 @@ async def register_start(payload: RegisterStartIn, db: DbSession) -> RegisterSta
 
     link = build_link(token)
     try:
-        send_verification(email, link, payload.username)
+        await send_verification(email, link, payload.username)
     except Exception:
         # 寄信失敗要讓使用者知道可以重試，但不能吐出 SMTP 的錯誤細節
         raise HTTPException(
@@ -301,7 +301,7 @@ async def forgot_password(payload: ForgotPasswordIn, db: DbSession) -> RegisterS
 
     link = build_reset_link(token)
     try:
-        send_password_reset(email, link, user.username)
+        await send_password_reset(email, link, user.username)
     except Exception:
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, "信件寄送失敗，請稍後再試一次"
