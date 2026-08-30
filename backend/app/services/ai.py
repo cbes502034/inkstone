@@ -20,6 +20,11 @@ from app.core.config import settings
 
 log = logging.getLogger("inkstone.ai")
 
+# 最後一次呼叫模型失敗的原因。診斷端點會把它一起帶出來 ——
+# 探測用的是最小請求，跟使用者實際那一次的條件不完全相同，
+# 只看探測結果可能會漏掉真正發生的問題。
+_last_failure: dict | None = None
+
 # --- 第一層：輸入端規則 ---
 
 _OFF_TOPIC = [
@@ -106,11 +111,13 @@ async def generate(prompt: str) -> AiResult:
 
     try:
         text = await _call_hf(prompt)
-    except Exception:
+    except Exception as e:
         # 模型掛掉不該讓整個寫作流程停擺，退回本機樣板。
-        # 但一定要記進日誌 —— 否則使用者只會覺得「AI 變笨了」，
+        # 但一定要留下痕跡 —— 否則使用者只會覺得「AI 變笨了」，
         # 沒有任何跡象顯示其實是模型呼叫失敗。
         log.exception("Hugging Face 呼叫失敗，改用本機樣板")
+        if _last_failure is None or _last_failure.get("at") != _now():
+            _record_failure(type(e).__name__, str(e)[:300], _resolve_model())
         return _local_draft(prompt)
 
     if not screen_output(text):
@@ -133,13 +140,22 @@ async def generate(prompt: str) -> AiResult:
 HF_ENDPOINT = "https://router.huggingface.co/v1/chat/completions"
 
 
+def _resolve_model() -> str:
+    """
+    決定送出去的 model 字串。
+
+    原本固定加 :cheapest（挑每輸出 token 最便宜的供應商）。那個選擇有問題：
+    同一個模型可能同時有好幾家在跑，而其中一家壞掉時，:cheapest 仍然可能
+    挑中它 —— 便宜跟能不能用是兩回事。
+
+    改成不加後綴，讓 HF 的路由自己選一家還活著的。要指定供應商的話，
+    在 HF_TEXT_MODEL 直接寫 "作者/模型:供應商"，這裡會原樣送出。
+    """
+    return settings.HF_TEXT_MODEL
+
+
 async def _call_hf(prompt: str) -> str:
-    # 後綴決定選哪家供應商跑這個模型。
-    # :cheapest 挑每輸出 token 最便宜的 —— 這是文章草稿，
-    # 差幾百毫秒沒有感覺，但免費額度能多撐很久。
-    model = settings.HF_TEXT_MODEL
-    if ":" not in model.rsplit("/", 1)[-1]:
-        model = f"{model}:cheapest"
+    model = _resolve_model()
 
     payload = {
         "model": model,
@@ -175,6 +191,7 @@ async def _call_hf(prompt: str) -> str:
                 "多半是 token 權限不足 —— Inference Providers 需要 fine-grained token "
                 "並勾選「Make calls to Inference Providers」，單純的 Read token 不夠。"
             )
+        _record_failure(str(resp.status_code), _redact(resp.text)[:400], model)
         resp.raise_for_status()
 
     data = resp.json()
@@ -227,15 +244,16 @@ async def probe() -> dict:
     刻意不做完整生成：max_tokens 設 1，能問出「這組 token 和這個模型
     到底通不通」，又幾乎不花額度。
     """
-    model = settings.HF_TEXT_MODEL
-    if ":" not in model.rsplit("/", 1)[-1]:
-        model = f"{model}:cheapest"
+    model = _resolve_model()
 
     result: dict = {
         "tokenConfigured": bool(settings.HF_TOKEN),
         "model": model,
         "endpoint": HF_ENDPOINT,
     }
+    if _last_failure:
+        result["lastRealFailure"] = _last_failure
+
     if not settings.HF_TOKEN:
         result["verdict"] = "沒有設定 HF_TOKEN，一律走本機樣板"
         return result
@@ -281,3 +299,14 @@ async def probe() -> dict:
 def _redact(text: str) -> str:
     """萬一對方把送過去的 token 原樣回吐，不要讓它出現在回應裡。"""
     return re.sub(r"hf_[A-Za-z0-9]{8,}", "hf_***", text)
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _record_failure(reason: str, detail: str, model: str) -> None:
+    global _last_failure
+    _last_failure = {"at": _now(), "reason": reason, "detail": detail, "model": model}
