@@ -49,6 +49,9 @@ interface Butterfly {
   bobAmp: number
   /** 同一批出生的錯開一點，不要整群疊在一起 */
   delay: number
+  /** 用哪一張翅膀貼圖（決定顏色） */
+  sprite: number
+  /** 軌跡的色相，跟翅膀同色才像是同一隻留下的 */
   hue: number
   trail: Array<{ x: number; y: number }>
 }
@@ -62,7 +65,23 @@ interface Butterfly {
  * 只畫「一邊」的翅膀，另一邊靠水平翻轉。拍翅就是把水平縮放
  * 從 1 壓到接近 0 再回來 —— 不必逐幀重算形狀。
  */
-function makeWingSprite(core: string, glow: string): HTMLCanvasElement {
+/**
+ * 蝴蝶的色盤。取自參考影片的舞台燈：青、天藍、紫羅蘭、洋紅，
+ * 外加一隻偶爾出現的暖琥珀 —— 那是串燈的顏色，數量少才顯得珍貴。
+ */
+const WING_HUES = [188, 205, 232, 265, 292, 320, 38]
+
+/**
+ * 畫面上同時存在的蝴蝶數。
+ *
+ * 有下限是關鍵 —— 先前是「一群飛完就全部消失，安靜十幾秒再來一群」，
+ * 中間那段空白讓整件事變成一段一段的。維持下限之後才有源源不絕的感覺，
+ * 而上限與偶爾的加碼保留了密度的起伏，不會變成均勻的背景動畫。
+ */
+const MIN_BUTTERFLIES = 4
+const MAX_BUTTERFLIES = 9
+
+function makeWingSprite(hue: number, dark: boolean): HTMLCanvasElement {
   const w = 104
   const h = 104
   const c = document.createElement('canvas')
@@ -72,6 +91,10 @@ function makeWingSprite(core: string, glow: string): HTMLCanvasElement {
 
   // 原點放在右緣中央 —— 那裡是身體，翅膀往左長出去，另一邊靠翻轉
   g.translate(w - 6, h / 2)
+
+  const glowColor = dark
+    ? `hsla(${hue}, 100%, 68%, 0.95)`
+    : `hsla(${hue}, 70%, 60%, 0.35)`
 
   /** 前翅：大、往上外側張開，尖端明確。蝴蝶的辨識度幾乎全在這一片 */
   function forewing() {
@@ -112,7 +135,7 @@ function makeWingSprite(core: string, glow: string): HTMLCanvasElement {
 
   const pass = (color: string, blur: number, lw: number, withVeins: boolean) => {
     g.strokeStyle = color
-    g.shadowColor = glow
+    g.shadowColor = glowColor
     g.shadowBlur = blur
     g.lineWidth = lw
     g.lineJoin = 'round'
@@ -122,12 +145,19 @@ function makeWingSprite(core: string, glow: string): HTMLCanvasElement {
     if (withVeins) veins()
   }
 
-  // 三層。外面兩層是紫色的暈，最上面一層是細而亮的白 ——
-  // 參考裡的蝴蝶是「白線稿發著紫光」，不是紫色的蝴蝶。
-  // 白線必須夠粗才蓋得過底下的暈，先前只有 1.1px 完全被吃掉。
-  pass(glow, 16, 5, false)
-  pass(glow, 8, 2.6, true)
-  pass(core, 3, 1.6, true)
+  if (dark) {
+    // 夜：三層。外面兩層是彩色的暈，最上面一層細而亮的白 ——
+    // 參考裡的蝴蝶是「白線稿發著彩光」，不是彩色的蝴蝶。
+    // 白線必須夠粗才蓋得過底下的暈，先前只有 1.1px 完全被吃掉。
+    pass(`hsla(${hue}, 95%, 62%, 0.85)`, 16, 5, false)
+    pass(`hsla(${hue}, 98%, 70%, 0.9)`, 8, 2.6, true)
+    pass('rgba(232, 244, 255, 0.95)', 3, 1.6, true)
+  } else {
+    // 日：白底上不能靠發光 —— 疊加模式在白色上只會得到白色。
+    // 改成實色細線加一點柔影，像淡彩鋼筆畫過的線稿。
+    pass(`hsla(${hue}, 62%, 62%, 0.30)`, 6, 4, false)
+    pass(`hsla(${hue}, 72%, 46%, 0.85)`, 0, 1.5, true)
+  }
 
   return c
 }
@@ -181,7 +211,9 @@ export function StarField() {
 
     // 蝴蝶：白色線稿本體 ＋ 紫色滑行軌跡。
     // 只在深色主題出現 —— 霓虹描邊放在淺色底上會變成髒髒的灰線。
-    const wing = isDark ? makeWingSprite('rgba(226, 240, 255, 0.95)', 'rgba(150, 120, 255, 0.9)') : null
+    // 每個色相各烘一張。七張貼圖總共不到 300KB 記憶體，
+    // 換來的是每隻蝴蝶都能有自己的顏色而不必逐幀重畫
+    const wings = WING_HUES.map((h) => makeWingSprite(h, isDark))
     let butterflies: Butterfly[] = []
     let nextButterflyAt = performance.now() + 1800 + Math.random() * 3000
 
@@ -292,6 +324,7 @@ export function StarField() {
      * 所以每一隻的弧線都不一樣 —— 走直線會很像遊戲裡的敵機。
      */
     function spawnButterfly(delay = 0) {
+      const pick = Math.floor(Math.random() * WING_HUES.length)
       const fromLeft = Math.random() < 0.5
       const x0 = fromLeft ? -80 : width + 80
       const x1 = fromLeft ? width + 80 : -80
@@ -318,7 +351,8 @@ export function StarField() {
         bobSpeed: 0.0022 + Math.random() * 0.0018,
         bobAmp: 9 + Math.random() * 16,
         delay,
-        hue: 258 + Math.random() * 34, // 紫到洋紅之間
+        sprite: pick,
+        hue: WING_HUES[pick],
         trail: [],
       })
       const b = butterflies[butterflies.length - 1]
@@ -354,15 +388,27 @@ export function StarField() {
     }
 
     function drawButterflies(now: number) {
-      if (!wing || reduced || !isDark) return
+      if (reduced) return
 
-      // 陣陣：一次放二到四隻，彼此錯開零點幾秒，然後安靜一段時間。
-      // 等距地一隻一隻飛過會像跑馬燈；成群出現再退場，才像真的有一陣蝴蝶
-      // 經過。安靜的間隔比群本身重要 —— 沒有留白就只是滿畫面在動。
-      if (butterflies.length === 0 && now >= nextButterflyAt) {
-        const flock = 2 + Math.floor(Math.random() * 3)
-        for (let i = 0; i < flock; i++) spawnButterfly(i * (260 + Math.random() * 420))
-        nextButterflyAt = now + 11000 + Math.random() * 14000
+      const dark = isDark
+
+      // 疊加模式在白底上只會得到白色 —— 白天必須改回一般疊合，
+      // 否則不管畫什麼都是隱形的。夜裡則要疊加，光才會互相加亮
+      ctx.globalCompositeOperation = dark ? 'lighter' : 'source-over'
+
+      // 畫面上永遠留著幾隻。先前是「全部飛完 → 安靜十幾秒 → 再來一群」，
+      // 結果是一段一段的，中間整片空白。改成隨時補足下限，
+      // 密度仍然有起伏（偶爾一陣比較多），但不會歸零。
+      const alive = butterflies.length
+      if (alive < MIN_BUTTERFLIES) {
+        // 缺幾隻補幾隻，錯開零點幾秒進場，不要整排同時冒出來
+        const need = MIN_BUTTERFLIES - alive
+        for (let i = 0; i < need; i++) spawnButterfly(i * (400 + Math.random() * 900))
+      } else if (alive < MAX_BUTTERFLIES && now >= nextButterflyAt) {
+        // 額外的一陣：在下限之上偶爾多放幾隻，密度才有呼吸感
+        const extra = 1 + Math.floor(Math.random() * 3)
+        for (let i = 0; i < extra; i++) spawnButterfly(i * (300 + Math.random() * 700))
+        nextButterflyAt = now + 7000 + Math.random() * 11000
       }
 
       butterflies = butterflies.filter((b) => {
@@ -397,32 +443,47 @@ export function StarField() {
         // 看得見的滑行路徑
         if (b.trail.length > 140) b.trail.shift()
 
-        // --- 紫色滑行軌跡 ---
-        if (b.trail.length > 2) {
-          for (let i = 1; i < b.trail.length; i++) {
-            const p0 = b.trail[i - 1]
-            const p1 = b.trail[i]
-            // 越靠近尾端越淡、越細
-            const k = i / b.trail.length
-            ctx.lineCap = 'round'
+        // --- 滑行軌跡 ---
+        //
+        // 分段畫，不是每兩點畫一次。逐段描邊在最多九隻、每隻 140 個點的
+        // 情況下是每幀兩千五百次 stroke 呼叫 —— canvas 的 stroke 有固定
+        // 開銷，那個量在低階裝置上會直接掉幀。
+        //
+        // 改成把軌跡切成幾段，每段用同一個寬度與透明度畫成一條折線：
+        // 每隻蝴蝶從 280 次描邊降到七次，視覺上幾乎看不出差別，
+        // 因為相鄰兩點的粗細本來就只差一點點。
+        if (b.trail.length > 4) {
+          const TIERS = 5
+          const per = b.trail.length / TIERS
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
 
-            // 外層：寬而暈的紫，負責「有一道光劃過」的存在感
-            ctx.strokeStyle = `hsla(${b.hue}, 95%, 66%, ${0.34 * k * k * alpha})`
-            ctx.lineWidth = 6.5 * k * b.scale
+          for (let tier = 0; tier < TIERS; tier++) {
+            const from = Math.floor(tier * per)
+            const to = Math.min(b.trail.length, Math.floor((tier + 1) * per) + 1)
+            if (to - from < 2) continue
+
+            // 段的中點代表這一段的新舊程度
+            const k = (tier + 0.5) / TIERS
+
             ctx.beginPath()
-            ctx.moveTo(p0.x, p0.y)
-            ctx.lineTo(p1.x, p1.y)
+            ctx.moveTo(b.trail[from].x, b.trail[from].y)
+            for (let i = from + 1; i < to; i++) ctx.lineTo(b.trail[i].x, b.trail[i].y)
+
+            // 外層：寬而暈，負責「有一道光劃過」的存在感
+            ctx.strokeStyle = dark
+              ? `hsla(${b.hue}, 95%, 66%, ${0.34 * k * k * alpha})`
+              : `hsla(${b.hue}, 68%, 58%, ${0.22 * k * k * alpha})`
+            ctx.lineWidth = 6.5 * k * b.scale
             ctx.stroke()
 
-            // 內層：細而亮的淡紫，只在靠近蝴蝶的那一段出現，
-            // 讓軌跡有個明確的「頭」而不是一條均勻的帶子
-            if (k > 0.55) {
-              const kk = (k - 0.55) / 0.45
-              ctx.strokeStyle = `hsla(${b.hue + 12}, 100%, 88%, ${0.5 * kk * kk * alpha})`
-              ctx.lineWidth = 2 * kk * b.scale
-              ctx.beginPath()
-              ctx.moveTo(p0.x, p0.y)
-              ctx.lineTo(p1.x, p1.y)
+            // 內層：只在最靠近蝴蝶的兩段出現，讓軌跡有明確的「頭」
+            // 而不是一條均勻的帶子
+            if (tier >= TIERS - 2) {
+              ctx.strokeStyle = dark
+                ? `hsla(${b.hue + 12}, 100%, 88%, ${0.45 * k * k * alpha})`
+                : `hsla(${b.hue}, 78%, 46%, ${0.4 * k * k * alpha})`
+              ctx.lineWidth = 2 * k * b.scale
               ctx.stroke()
             }
           }
@@ -437,6 +498,7 @@ export function StarField() {
         // 讓機身朝著行進方向 —— 不轉的話飛下坡時會像在平移
         const angle = Math.atan2(ay - by, ax - bx)
 
+        const wing = wings[b.sprite]
         const sw = wing.width * b.scale
         const sh = wing.height * b.scale
 
@@ -461,6 +523,9 @@ export function StarField() {
         ctx.globalAlpha = 1
         return true
       })
+
+      // 交還給主迴圈，不要把模式留在這裡變成別人的副作用
+      ctx.globalCompositeOperation = isDark ? 'lighter' : 'source-over'
     }
 
     /** 十字星芒 —— 只給最亮的幾顆，畫龍點睛用 */
