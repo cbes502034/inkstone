@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import or_, select
 
 from app.core.config import settings
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import CurrentUser, DbSession, stale_generation
 from app.core.security import (
     TokenError,
     create_access_token,
@@ -65,8 +65,8 @@ def _private(user: User) -> UserPrivate:
 
 def _session(user: User) -> AuthSession:
     return AuthSession(
-        accessToken=create_access_token(user.id),
-        refreshToken=create_refresh_token(user.id),
+        accessToken=create_access_token(user.id, user.token_generation),
+        refreshToken=create_refresh_token(user.id, user.token_generation),
         user=_private(user),
     )
 
@@ -259,6 +259,11 @@ async def refresh(payload: RefreshIn, db: DbSession) -> TokenPair:
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "帳號不存在或已停用")
 
+    # 這裡一定要一起檢查。少了這道，改完密碼的人手上那張 refresh
+    # 還是能換出全新的 access —— 等於整個機制沒有作用
+    if stale_generation(data, user):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "密碼已變更，請重新登入")
+
     # 這裡刻意不做 refresh token 輪替。
     # 輪替真正的價值在「重放偵測」（發現舊 token 又被用 → 連坐廢掉整條家族），
     # 那套沒做的話，換來的只有壞處：使用者開兩個分頁時，access 一過期
@@ -266,8 +271,8 @@ async def refresh(payload: RefreshIn, db: DbSession) -> TokenPair:
     # 那個分頁就無端被踢回登入頁。
 
     return TokenPair(
-        accessToken=create_access_token(user.id),
-        refreshToken=create_refresh_token(user.id),
+        accessToken=create_access_token(user.id, user.token_generation),
+        refreshToken=create_refresh_token(user.id, user.token_generation),
     )
 
 
@@ -338,15 +343,22 @@ async def reset_password(payload: ResetPasswordIn, db: DbSession) -> None:
     """
     設定新密碼。
 
-    密碼換掉之後，舊的 refresh token 理論上也該一併失效
-    （否則偷到 token 的人仍能繼續存取）——
-    這需要 token 撤銷名單，已列入待辦。
+    密碼一換，既有的 token 全部作廢。
+
+    這件事很重要：改密碼正是「我懷疑帳號被盜」時會做的第一個動作，
+    如果對方手上那張 refresh token 不受影響，他可以繼續用滿三十天 ——
+    等於你以為換了鎖，其實舊鑰匙還開得了。
+
+    代價是所有裝置都會被登出，包含正在操作的這一台。那是對的行為，
+    但介面上要講清楚，否則使用者會覺得「我只是改個密碼，手機怎麼也登出了」。
     """
     reset, user = await _load_reset(db, payload.token)
 
     user.password_hash = hash_password(payload.password)
     # 能收到信就代表信箱是本人的，順便把驗證狀態補上
     user.email_verified = True
+    # 這一行就是全部失效的開關：世代一進，所有既有 token 的 gen 就對不上了
+    user.token_generation += 1
 
     # 票證一次性
     await db.delete(reset)

@@ -34,7 +34,9 @@ def needs_rehash(hashed: str) -> bool:
         return True
 
 
-def _create_token(subject: str, token_type: TokenType, expires: timedelta) -> str:
+def _create_token(
+    subject: str, token_type: TokenType, expires: timedelta, generation: int = 0
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,
@@ -45,18 +47,23 @@ def _create_token(subject: str, token_type: TokenType, expires: timedelta) -> st
         # 沒有這個欄位就只能撤銷「某使用者的全部 token」，
         # 那會把他其他裝置也一起登出。
         "jti": secrets.token_urlsafe(16),
+        # 簽發當下的 session 世代。使用者重設密碼時世代 +1，
+        # 於是所有舊 token 的這個值會對不上而全部失效
+        "gen": generation,
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def create_access_token(user_id: str) -> str:
+def create_access_token(user_id: str, generation: int = 0) -> str:
     return _create_token(
-        user_id, "access", timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES)
+        user_id, "access", timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES), generation
     )
 
 
-def create_refresh_token(user_id: str) -> str:
-    return _create_token(user_id, "refresh", timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS))
+def create_refresh_token(user_id: str, generation: int = 0) -> str:
+    return _create_token(
+        user_id, "refresh", timedelta(days=settings.REFRESH_TOKEN_TTL_DAYS), generation
+    )
 
 
 class TokenError(Exception):

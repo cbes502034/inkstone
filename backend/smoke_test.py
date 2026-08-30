@@ -312,6 +312,16 @@ def main() -> int:
         "token": reset_token, "password": "again!!!!", "confirmPassword": "again!!!!",
     })
     check("重設連結不能用第二次", r.status_code == 400, str(r.status_code))
+
+    # 重設密碼會作廢該使用者的所有既有 token，所以 a_tok 從這裡開始失效。
+    # 後面的測試都還要用 alice，重新登入拿一組新的。
+    #
+    # 這一段是加了「改密碼讓 session 失效」之後才需要的 —— 換句話說，
+    # 測試會在這裡爆掉，本身就是那個機制真的生效的證據。
+    r = c.post("/auth/login", json={"account": f"alice_{tag}", "password": "brand-new-pw!"})
+    check("重設後重新登入", r.status_code == 200, r.text[:150])
+    a_tok = {"Authorization": f"Bearer {r.json()['accessToken']}"}
+
     print("\n— 群組管理 —")
     r = c.post("/conversations", headers=a_tok, json={
         "name": "管理測試", "memberIds": [bob["user"]["id"]],
@@ -489,6 +499,52 @@ def main() -> int:
     r = c.patch("/users/me", headers=a_tok,
                 json={"avatarUrl": "data:image/png;base64,bm90YW5pbWFnZQ=="})
     check("偽裝成圖片的檔案被擋下", r.status_code == 400, str(r.status_code))
+
+    print("\n— 改密碼讓既有 session 失效 —")
+    victim2 = register(c, tag, "pwreset", "改密碼測試")
+    v2 = {"Authorization": f"Bearer {victim2['accessToken']}"}
+    v2_refresh = victim2["refreshToken"]
+
+    r = c.get("/users/me", headers=v2)
+    check("改密碼前 token 可用", r.status_code == 200, str(r.status_code))
+
+    r = c.post("/auth/password/forgot",
+               json={"email": f"pwreset_{tag}@example.com"})
+    link = r.json().get("devLink")
+    check("拿到重設連結", bool(link), r.text[:150])
+
+    r = c.post("/auth/password/reset", json={
+        "token": link.split("token=")[1],
+        "password": "brandNewPass99!", "confirmPassword": "brandNewPass99!"})
+    check("重設密碼", r.status_code == 204, r.text[:150])
+
+    # 三條路都要擋住，漏一條就等於整個機制沒作用
+    r = c.get("/users/me", headers=v2)
+    check("舊的 access token 失效", r.status_code == 401, str(r.status_code))
+
+    r = c.post("/auth/refresh", json={"refreshToken": v2_refresh})
+    check("舊的 refresh token 也換不到新的", r.status_code == 401, str(r.status_code))
+
+    r = c.get("/posts", headers=v2)
+    check("公開端點也不認舊 token（likedByMe 不該還是本人）",
+          r.status_code == 200, str(r.status_code))
+
+    # 新密碼可以正常登入，而且新 token 不受界線影響
+    r = c.post("/auth/login", json={"account": f"pwreset_{tag}",
+                                    "password": "brandNewPass99!"})
+    check("新密碼登入成功", r.status_code == 200, r.text[:150])
+    if r.status_code == 200:
+        nt = {"Authorization": f"Bearer {r.json()['accessToken']}"}
+        rr = c.get("/users/me", headers=nt)
+        check("重設後拿到的新 token 可用", rr.status_code == 200, str(rr.status_code))
+
+    r = c.post("/auth/login", json={"account": f"pwreset_{tag}",
+                                    "password": "sup3rsecret!"})
+    check("舊密碼登不進去", r.status_code == 401, str(r.status_code))
+
+    # 別人的 session 不受影響
+    r = c.get("/users/me", headers=a_tok)
+    check("別人的 session 不受影響", r.status_code == 200, str(r.status_code))
 
     print("\n— 登出與 token 撤銷 —")
     # 專門開一個帳號來測，不然後面的測試會因為 token 失效而全掛
