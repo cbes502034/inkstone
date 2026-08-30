@@ -735,13 +735,19 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       const baseAngle = 1.02 + (Math.random() - 0.5) * 0.22
       const baseX = width * (0.15 + Math.random() * 0.7)
 
+      // 長度取對角線再放大 —— 不論從哪個角度斜過來，兩端都落在
+      // 畫面之外，所以看到的是一條「貫穿」的線，而不是一段浮在
+      // 中間、看得到頭尾的光棒
+      const span = Math.hypot(width, height) * 1.8
+
       for (let i = 0; i < count; i++) {
         rays.push({
           x: baseX + (i - count / 2) * (34 + Math.random() * 70),
-          y: -height * 0.1,
+          // 起點退到畫面上方之外，斜下來才能完整穿過
+          y: -height * 0.55,
           angle: baseAngle + (Math.random() - 0.5) * 0.1,
-          length: height * (0.8 + Math.random() * 0.7),
-          width: 10 + Math.random() * 26,
+          length: span,
+          width: 9 + Math.random() * 18,
           // 同一束裡彼此錯開幾十毫秒，像先後亮起來的
           life: -i * (60 + Math.random() * 90),
           ttl: 520 + Math.random() * 380,
@@ -770,19 +776,28 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         ctx.translate(r.x, r.y)
         ctx.rotate(r.angle)
 
-        // 沿著長度方向淡出：光線是從上方灑下來的，越往下越散
+        // 顏色要能在白色卡片上看得見。
+        //
+        // 純白或接近白的暖光壓在白卡片上等於隱形 —— 這是雲朵游標
+        // 踩過的同一個坑。改成帶琥珀的暖色：在藍天上它是亮的，
+        // 在白卡片上它是暖的，兩種底色各自靠不同的差異被看見。
+        //
+        // 兩端淡、中段濃：光線貫穿畫面，但最實的是中間那一段，
+        // 這樣才有「灑下來」的方向感而不是一根均勻的柱子
         const g = ctx.createLinearGradient(0, 0, 0, r.length)
-        g.addColorStop(0, `rgba(255, 252, 238, ${0.5 * fade})`)
-        g.addColorStop(0.35, `rgba(255, 250, 230, ${0.34 * fade})`)
-        g.addColorStop(1, 'rgba(255, 248, 226, 0)')
+        g.addColorStop(0, `rgba(255, 236, 186, 0)`)
+        g.addColorStop(0.22, `rgba(255, 231, 175, ${0.4 * fade})`)
+        g.addColorStop(0.48, `rgba(255, 226, 160, ${0.58 * fade})`)
+        g.addColorStop(0.76, `rgba(255, 233, 182, ${0.34 * fade})`)
+        g.addColorStop(1, 'rgba(255, 240, 200, 0)')
         ctx.fillStyle = g
 
         // 上寬下窄，像一道從縫隙灑開的光
         ctx.beginPath()
         ctx.moveTo(-r.width / 2, 0)
         ctx.lineTo(r.width / 2, 0)
-        ctx.lineTo(r.width * 0.9, r.length)
-        ctx.lineTo(-r.width * 0.9, r.length)
+        ctx.lineTo(r.width * 1.4, r.length)
+        ctx.lineTo(-r.width * 1.4, r.length)
         ctx.closePath()
         ctx.fill()
         ctx.restore()

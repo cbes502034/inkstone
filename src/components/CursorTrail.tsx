@@ -36,11 +36,16 @@ interface Puff {
   blobs: Blob[]
 }
 
-/** 一朵雲從冒出到散盡的毫秒數 */
-const LIFE = 760
+/**
+ * 一朵雲從冒出到散盡的毫秒數。
+ *
+ * 這個值決定拖曳有多長 —— 活得越久，同時留在畫面上的就越多，
+ * 尾巴自然就拉得越遠。
+ */
+const LIFE = 1300
 
 /** 游標移動多遠才留下一朵。太密會連成一條，就失去一團一團的感覺 */
-const SPACING = 26
+const SPACING = 24
 
 export function CursorTrail() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -88,9 +93,10 @@ export function CursorTrail() {
     }
 
     function spawn(x: number, y: number) {
-      const count = 3 + Math.floor(Math.random() * 3)
-      // 大一點才看得出是雲。太小的話一團團看起來像灰塵
-      const base = 10 + Math.random() * 7
+      // 一朵就是一團，不再由好幾個圓疊成。
+      // 疊起來的邊比較像真的雲，但一路拖過去會糊成一整片；
+      // 單獨一團反而讓「一顆一顆」的節奏清楚
+      const base = 17 + Math.random() * 11
       puffs.push({
         x,
         y,
@@ -99,13 +105,10 @@ export function CursorTrail() {
         // 往上飄一點點 —— 輕的東西會浮起來，往下掉會像水滴
         vx: (Math.random() - 0.5) * 0.05,
         vy: -0.012 - Math.random() * 0.022,
-        blobs: Array.from({ length: count }, (_, i) => ({
-          dx: (i - count / 2) * base * 0.62 + (Math.random() - 0.5) * 4,
-          dy: (Math.random() - 0.5) * base * 0.7,
-          r: base * (0.62 + Math.random() * 0.5),
-        })),
+        blobs: [{ dx: 0, dy: 0, r: base }],
       })
-      if (puffs.length > 28) puffs.shift()
+      // 上限跟著壽命一起放大，否則尾巴會在中途被砍掉
+      if (puffs.length > 48) puffs.shift()
     }
 
     function draw() {
@@ -129,7 +132,9 @@ export function CursorTrail() {
         // 先快速膨出來再慢慢散開 —— 那個「繃」的一下就在前兩成的時間裡。
         // 線性放大會像慢慢吹氣球，少了冒出來的感覺
         const pop = t < 0.2 ? easeOut(t / 0.2) : 1 + (t - 0.2) * 0.55
-        const alpha = (1 - t) * (1 - t) * peak
+        // 線性淡出，不是平方。平方在前三分之一就掉掉一半，
+        // 尾巴會斷在半途；線性才拖得完整
+        const alpha = (1 - t) * peak
 
         const age = now - p.born
         const cx = p.x + p.vx * age
@@ -142,11 +147,15 @@ export function CursorTrail() {
           const by = cy + b.dy * p.scale
 
           // 徑向漸層，邊緣化開 —— 實心圓會是一顆球，不是雲
+          // 一朵雲只有一個圓，所以這個漸層必須自己撐起密度。
+          // 先前是三到五個圓疊起來累積出來的，換成單顆之後
+          // 同一組色標就顯得太薄了 —— 中段要撐住，不能一離開中心就掉
           const g = ctx.createRadialGradient(bx, by, 0, bx, by, r)
           g.addColorStop(0, `rgba(${core}, ${alpha})`)
-          // 中段就換成帶藍的灰，那圈灰是它在白底上唯一的依靠
-          g.addColorStop(0.38, `rgba(${tint}, ${alpha * 0.85})`)
-          g.addColorStop(0.72, `rgba(${tint}, ${alpha * 0.4})`)
+          g.addColorStop(0.3, `rgba(${core}, ${alpha * 0.9})`)
+          // 中段換成帶藍的灰，那圈灰是它在白底上唯一的依靠
+          g.addColorStop(0.58, `rgba(${tint}, ${alpha * 0.78})`)
+          g.addColorStop(0.82, `rgba(${tint}, ${alpha * 0.32})`)
           g.addColorStop(1, `rgba(${tint}, 0)`)
           ctx.fillStyle = g
           ctx.beginPath()
