@@ -1124,10 +1124,16 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         const w =
           Math.sin(b.pacePhase + now * b.paceFreq) * 0.62 +
           Math.sin(b.pacePhase * 1.7 + now * b.paceFreq * 2.3) * 0.38
-        // 門檻拉到 0.95 —— 曲線只有偶爾才會低於它，所以停頓變成
-        // 難得出現的一兩秒。偶爾停一下是生動，常常停就變成卡住，
-        // 而這個設計的本意只是「有一點點這種感覺」
-        const pace = Math.max(0, w + 0.95) * 1.05
+        // 常態與例外分開寫，不要讓速度自己滑向零。
+        //
+        // 先前是 max(0, w + 0.95)：曲線只要接近最低點，pace 就落到
+        // 0.05 這種數字 —— 技術上還在動，看起來已經是停住了。
+        // 所以「滯留」的實際比例遠高於門檻本身的意思。
+        //
+        // 現在常態就是一直在飛，只是忽快忽慢；真正的停頓是一個
+        // 獨立的條件，而且門檻高到大約只佔百分之一的時間。
+        let pace = 1.02 + w * 0.32 // 0.7 ~ 1.34，一直在移動
+        if (w < -0.965) pace = 0 // 兩條正弦同時接近最低點才會發生
 
         b.t += b.speed * pace * 16
         if (b.t >= 1) return false

@@ -72,10 +72,7 @@ export function CursorTrail() {
     // 在白卡片上看得到灰邊。
     const tint = isDark ? '196, 170, 255' : '150, 176, 208'
     const core = isDark ? '236, 224, 255' : '255, 255, 255'
-    // 壓得很低。這是游標的裝飾，長時間工作時它會一直在視線裡 ——
-    // 稍微搶一點就會變成干擾，而干擾累積起來就是「用久很煩」。
-    // 寧可淡到只在移動的瞬間察覺得到
-    const peak = isDark ? 0.3 : 0.34
+    const peak = isDark ? 0.5 : 0.9
 
     let width = 0
     let height = 0
@@ -99,7 +96,7 @@ export function CursorTrail() {
       // 一朵就是一團，不再由好幾個圓疊成。
       // 疊起來的邊比較像真的雲，但一路拖過去會糊成一整片；
       // 單獨一團反而讓「一顆一顆」的節奏清楚
-      const base = 11 + Math.random() * 6
+      const base = 17 + Math.random() * 11
       puffs.push({
         x,
         y,
@@ -153,13 +150,14 @@ export function CursorTrail() {
           // 一朵雲只有一個圓，所以這個漸層必須自己撐起密度。
           // 先前是三到五個圓疊起來累積出來的，換成單顆之後
           // 同一組色標就顯得太薄了 —— 中段要撐住，不能一離開中心就掉
-          // 從中心就開始化開，不留實心的核。有核的話每一朵都是一個
-          // 明確的圓，一路拖過去像一串珠子壓在字上；整朵都糊掉才會
-          // 像是空氣裡的一點霧
+          // 一朵雲只有一個圓，所以這個漸層必須自己撐起密度。
+          // 中段要撐住，不能一離開中心就掉
           const g = ctx.createRadialGradient(bx, by, 0, bx, by, r)
-          g.addColorStop(0, `rgba(${core}, ${alpha * 0.85})`)
-          g.addColorStop(0.35, `rgba(${tint}, ${alpha * 0.5})`)
-          g.addColorStop(0.68, `rgba(${tint}, ${alpha * 0.2})`)
+          g.addColorStop(0, `rgba(${core}, ${alpha})`)
+          g.addColorStop(0.3, `rgba(${core}, ${alpha * 0.9})`)
+          // 中段換成帶藍的灰，那圈灰是它在白底上唯一的依靠
+          g.addColorStop(0.58, `rgba(${tint}, ${alpha * 0.78})`)
+          g.addColorStop(0.82, `rgba(${tint}, ${alpha * 0.32})`)
           g.addColorStop(1, `rgba(${tint}, 0)`)
           ctx.fillStyle = g
           ctx.beginPath()
