@@ -88,6 +88,14 @@ interface Butterfly {
   loopRadius: number
   loopPhase: number
   loopDir: number
+  /**
+   * 速度的起伏。
+   *
+   * 等速前進是機器的行為。蝴蝶忽快忽慢，有時停在半空幾秒才又動 ——
+   * 那個不規則比路徑本身更能讓人覺得牠是活的。
+   */
+  pacePhase: number
+  paceFreq: number
   /** 用哪一張翅膀貼圖（決定顏色） */
   sprite: number
   /** 軌跡的色相，跟翅膀同色才像是同一隻留下的 */
@@ -646,11 +654,14 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
      * 所以這個漸層同時也是可讀性的保障。
      */
     function drawDaySky() {
+      // 上方的藍要夠濃才看得出是天空。下方仍然收到接近白 ——
+      // 內容集中在中下段，那裡淡才讀得舒服
       const sky = ctx.createLinearGradient(0, 0, 0, height)
-      sky.addColorStop(0, '#bcd8f5')
-      sky.addColorStop(0.34, '#d6e7f8')
-      sky.addColorStop(0.7, '#eaf1fb')
-      sky.addColorStop(1, '#f6f8fc')
+      sky.addColorStop(0, '#6fa8dc')
+      sky.addColorStop(0.22, '#93c0e8')
+      sky.addColorStop(0.5, '#c3ddf4')
+      sky.addColorStop(0.78, '#e4eefa')
+      sky.addColorStop(1, '#f4f8fd')
       ctx.fillStyle = sky
       ctx.fillRect(0, 0, width, height)
 
@@ -679,7 +690,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     function spawnRay() {
       ray = {
         x: -width * 0.35,
-        width: width * (0.1 + Math.random() * 0.14),
+        width: width * (0.07 + Math.random() * 0.1),
         life: 0,
         ttl: 5200 + Math.random() * 3600,
       }
@@ -695,7 +706,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       const t = ray.life / ray.ttl
       if (t >= 1) {
         ray = null
-        nextRayAt = now + 9000 + Math.random() * 14000
+        // 流星大約每幾秒到十幾秒來一次，白天的光束也該是同一個節奏 ——
+        // 它是流星在白天的對應物，隔太久就失去那個呼應
+        nextRayAt = now + 5000 + Math.random() * 8000
         return
       }
 
@@ -709,8 +722,12 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       ctx.rotate(0.42)
 
       const g = ctx.createLinearGradient(-ray.width, 0, ray.width, 0)
+      // 三段而不是兩段：中間一道較窄的亮芯，兩側才是散開的暈。
+      // 只有一個平均的漸層會像一片霧，看不出是「一道光」
       g.addColorStop(0, 'rgba(255, 246, 219, 0)')
-      g.addColorStop(0.5, `rgba(255, 249, 228, ${0.34 * fade})`)
+      g.addColorStop(0.34, `rgba(255, 250, 232, ${0.3 * fade})`)
+      g.addColorStop(0.5, `rgba(255, 253, 244, ${0.72 * fade})`)
+      g.addColorStop(0.66, `rgba(255, 250, 232, ${0.3 * fade})`)
       g.addColorStop(1, 'rgba(255, 246, 219, 0)')
       ctx.fillStyle = g
 
@@ -909,6 +926,10 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         loopRadius: 26 + Math.random() * 52,
         loopPhase: Math.random() * Math.PI * 2,
         loopDir: Math.random() < 0.5 ? -1 : 1,
+        pacePhase: Math.random() * Math.PI * 2,
+        // 頻率的範圍要夠寬。差距太小的話，即使相位不同，
+        // 幾隻並排飛起來還是會看起來像在同步變速
+        paceFreq: 0.0006 + Math.random() * 0.0030,
         sprite: pick,
         hue: wingHues[pick],
         trail: [],
@@ -917,7 +938,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       const depth = Math.random()
       // 側飛把水平方向壓掉一半，所以整體要放大才維持得住存在感
       b.scale = 0.5 + depth * 0.6
-      b.speed = (0.000075 + (1 - depth) * 0.00009)
+      // 基礎速度：遠的（小的）慢、近的快，再各自加一段隨機。
+      // 只用 depth 決定的話，同樣大小的兩隻速度就會一模一樣
+      b.speed = (0.00006 + (1 - depth) * 0.00008) * (0.6 + Math.random() * 0.9)
     }
 
     /**
@@ -999,7 +1022,22 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
           return true
         }
 
-        b.t += b.speed * 16
+        // 速度調變。
+        //
+        // 兩條頻率不同的正弦疊起來，得到一條不會重複的起伏曲線 ——
+        // 單一正弦會有明顯的週期感，看久了就發現牠在規律地快慢快慢。
+        //
+        // 加 0.42 之後取正值：曲線低於那個門檻的期間 pace 就是 0，
+        // 蝴蝶停在原地。那些停頓不是特例，是這條曲線自然的一部分。
+        const w =
+          Math.sin(b.pacePhase + now * b.paceFreq) * 0.62 +
+          Math.sin(b.pacePhase * 1.7 + now * b.paceFreq * 2.3) * 0.38
+        // 門檻拉到 0.95 —— 曲線只有偶爾才會低於它，所以停頓變成
+        // 難得出現的一兩秒。偶爾停一下是生動，常常停就變成卡住，
+        // 而這個設計的本意只是「有一點點這種感覺」
+        const pace = Math.max(0, w + 0.95) * 1.05
+
+        b.t += b.speed * pace * 16
         if (b.t >= 1) return false
 
         const [bx, by] = posAt(b, b.t)
