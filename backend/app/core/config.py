@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # --- 基本 ---
     ENV: Literal["dev", "prod"] = "dev"
     API_V1_PREFIX: str = "/api/v1"
-    PROJECT_NAME: str = "硯 Inkstone"
+    PROJECT_NAME: str = "Friends World"
 
     # --- 資料庫 ---
     # 預設用 SQLite，clone 下來不用申請任何帳號就能跑起來。
@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     MAIL_FROM: str = "no-reply@inkstone.app"
-    MAIL_FROM_NAME: str = "硯 Inkstone"
+    MAIL_FROM_NAME: str = "Friends World"
 
     # --- 上傳限制 ---
     MAX_AVATAR_BYTES: int = 12 * 1024 * 1024

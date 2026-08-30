@@ -47,7 +47,7 @@ def _shell(title: str, body_html: str, footer: str) -> str:
              font-family:'Noto Sans TC',-apple-system,'Segoe UI',sans-serif;">
   <div style="max-width:520px;margin:0 auto;background:#14182a;border-radius:16px;
               padding:40px 32px;color:#eceef4;">
-    <p style="margin:0 0 28px;font-size:22px;font-weight:600;">硯</p>
+    <p style="margin:0 0 28px;font-size:22px;font-weight:600;">FW</p>
     <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;line-height:1.5;">
       {title}
     </h1>
@@ -71,9 +71,9 @@ def _button(link: str, label: str) -> str:
 def verification_mail(link: str, username: str) -> Mail:
     ttl = settings.VERIFICATION_TTL_MINUTES
     return Mail(
-        subject="硯 — 完成你的註冊",
+        subject="Friends World — 完成你的註冊",
         text=(
-            f"你好，\n\n有人用這個信箱在「硯」申請了帳號 {username}。\n\n"
+            f"你好，\n\n有人用這個信箱在「Friends World」申請了帳號 {username}。\n\n"
             f"點下面的連結設定密碼，就完成註冊：\n\n{link}\n\n"
             f"這個連結 {ttl} 分鐘內有效，只能使用一次。\n\n"
             "如果這不是你本人的操作，忽略這封信就好，不會有任何帳號被建立。\n"
@@ -92,7 +92,7 @@ def verification_mail(link: str, username: str) -> Mail:
 def reset_mail(link: str, username: str) -> Mail:
     ttl = settings.RESET_TTL_MINUTES
     return Mail(
-        subject="硯 — 重設你的密碼",
+        subject="Friends World — 重設你的密碼",
         text=(
             f"你好，\n\n有人要求重設帳號 {username} 的密碼。\n\n"
             f"點下面的連結設定新密碼：\n\n{link}\n\n"

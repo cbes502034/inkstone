@@ -79,7 +79,7 @@ export function Terms() {
   return (
     <Page title="服務條款">
       <p>
-        歡迎使用「硯」。註冊帳號或使用本服務，即表示你同意以下條款。
+        歡迎使用「Friends World」。註冊帳號或使用本服務，即表示你同意以下條款。
         如果不同意，請不要使用本服務。
       </p>
 

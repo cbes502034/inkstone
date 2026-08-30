@@ -148,7 +148,7 @@ export function AppShell() {
             <div
               className={`mb-8 flex items-center ${collapsed ? 'flex-col gap-3' : 'justify-between'}`}
             >
-              <Link to="/" className={collapsed ? '' : 'ml-2'} aria-label="硯">
+              <Link to="/" className={collapsed ? '' : 'ml-2'} aria-label="Friends World">
                 {collapsed ? <Logo size={34} /> : <Wordmark size={34} />}
               </Link>
               <button
