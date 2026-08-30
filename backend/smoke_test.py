@@ -178,6 +178,22 @@ def main() -> int:
     r = c.get("/search", headers=a_tok, params={"q": "筆記"})
     check("標籤搜尋", r.status_code == 200 and len(r.json()["posts"]) >= 1, r.text[:150])
 
+    # 排序：標籤命中 > 標題命中 > 內文命中。
+    # 只照時間排的話，剛發的文章只因為內文提到一次，
+    # 就會壓過標題完全命中的舊文章。
+    kw = f"排序{tag}"
+    c.post("/posts", headers=a_tok, json={
+        "title": "無關的標題", "body": f"內文提到 {kw} 一次",
+    })
+    c.post("/posts", headers=a_tok, json={
+        "title": f"標題就有 {kw}", "body": "內文沒有",
+    })
+    r = c.get("/search", headers=a_tok, params={"q": kw})
+    found = r.json()["posts"]
+    check("標題命中排在內文命中前面",
+          len(found) == 2 and kw in found[0]["title"],
+          str([p["title"] for p in found]))
+
     print("\n— 好友 —")
     r = c.get(f"/users/{bob['user']['username']}", headers=a_tok)
     check("看別人的頁面", r.status_code == 200 and r.json()["friendState"] == "none")
@@ -377,8 +393,16 @@ def main() -> int:
                params={"toUserId": eve["user"]["id"]})
     check("封鎖後不能邀請好友", r.status_code == 403, str(r.status_code))
 
+    r = c.get("/search", headers=a_tok, params={"q": eve["user"]["username"]})
+    hit = any(u["id"] == eve["user"]["id"] for u in r.json()["users"])
+    check("封鎖的人不出現在搜尋結果", not hit, r.text[:150])
+
     r = c.delete(f"/friends/block/{eve['user']['id']}", headers=a_tok)
     check("解除封鎖", r.status_code == 204, str(r.status_code))
+
+    r = c.get("/search", headers=a_tok, params={"q": eve["user"]["username"]})
+    hit = any(u["id"] == eve["user"]["id"] for u in r.json()["users"])
+    check("解除封鎖後又找得到", hit, r.text[:150])
 
     r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
     check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
