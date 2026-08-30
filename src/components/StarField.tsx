@@ -625,7 +625,9 @@ function makeGlowSprite(rgb: string): HTMLCanvasElement {
  * 所以主群留在後面，前面只放很少、很淡、較小的幾隻，像隔著玻璃看到的。
  * 附帶的好處是一前一後產生景深，比單層更有空間感。
  */
-export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } = {}) {
+export function StarField({
+  layer = 'sky',
+}: { layer?: 'sky' | 'butterflies' | 'rays' } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { isDark } = useTheme()
 
@@ -642,6 +644,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const front = layer === 'butterflies'
+    const raysOnly = layer === 'rays'
 
     // 前景下限是 0、上限是 1 —— 所以它時有時無。
     // 後面那一層永遠保留一隻，畫面因此不會完全空掉，
@@ -695,7 +698,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     let clouds: Cloud[] = []
     let moon: HTMLCanvasElement | null = null
     let rays: Ray[] = []
-    let nextRayAt = performance.now() + 3000 + Math.random() * 5000
+    let nextRayAt = performance.now() + 1200 + Math.random() * 2000
 
     /**
      * 白天的天空。
@@ -743,11 +746,11 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       // 本體有一段大致均勻的亮區，才會被讀成一個有大小的光源；
       // 但中心與周圍之間仍然沒有硬邊 —— 那是「貼上去的球」的來源。
       // 之後接一片拉得很遠的暖暈，太陽的存在感有一半來自那片光。
-      sun.addColorStop(0, 'rgba(255, 251, 224, 0.78)')
-      sun.addColorStop(body, 'rgba(255, 244, 190, 0.62)')
-      sun.addColorStop(rim, 'rgba(255, 234, 152, 0.36)')
-      sun.addColorStop(rim + (1 - rim) * 0.12, 'rgba(255, 230, 148, 0.2)')
-      sun.addColorStop(rim + (1 - rim) * 0.4, 'rgba(255, 230, 158, 0.08)')
+      sun.addColorStop(0, 'rgba(255, 252, 232, 0.92)')
+      sun.addColorStop(body, 'rgba(255, 246, 200, 0.8)')
+      sun.addColorStop(rim, 'rgba(255, 236, 160, 0.54)')
+      sun.addColorStop(rim + (1 - rim) * 0.12, 'rgba(255, 232, 152, 0.32)')
+      sun.addColorStop(rim + (1 - rim) * 0.4, 'rgba(255, 232, 164, 0.14)')
       sun.addColorStop(1, 'rgba(255, 236, 186, 0)')
       ctx.fillStyle = sun
       ctx.fillRect(0, 0, width, height)
@@ -861,7 +864,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         const y = sy + dy * k
         // 每顆各自緩慢地明滅，不會整串同步
         const shimmer = 0.7 + 0.3 * Math.sin(now * 0.0016 + k * 9)
-        const a = 0.07 * fade * w * shimmer
+        // 跟光線同一個道理：白底上的東西必須靠色相差被看見，
+        // 而且 fade 要給下限，否則大半輩子都在淡入淡出的兩端
+        const a = 0.85 * Math.max(0.55, fade) * w * shimmer
         if (a < 0.004) continue
 
         ctx.save()
@@ -870,9 +875,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         ctx.rotate(Math.atan2(dy, dx))
 
         const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size)
-        g.addColorStop(0, `rgba(255, 248, 206, ${a})`)
-        g.addColorStop(0.6, `rgba(255, 240, 176, ${a * 0.6})`)
-        g.addColorStop(1, 'rgba(255, 238, 170, 0)')
+        g.addColorStop(0, `rgba(255, 220, 128, ${a})`)
+        g.addColorStop(0.55, `rgba(255, 210, 108, ${a * 0.62})`)
+        g.addColorStop(1, 'rgba(255, 214, 126, 0)')
         ctx.fillStyle = g
 
         ctx.beginPath()
@@ -904,20 +909,23 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
       if (rays.length === 0 && now >= nextRayAt) {
         spawnRays()
-        nextRayAt = now + 6000 + Math.random() * 9000
+        nextRayAt = now + 3500 + Math.random() * 5000
       }
       if (rays.length === 0) return
 
       const [sx, sy] = sunPos()
 
-      // 光用疊加模式畫。source-over 是「在上面塗一層顏料」，
-      // 顏色再濃也只是把底下染黃；lighter 是「把光加上去」，
-      // 那才是光該有的行為 —— 亮的地方更亮，而且不會把字蓋掉，
-      // 因為深色的字加上一點光還是深色。
+      // 白天必須用一般疊合，不能用加亮。
       //
-      // 這也解掉了「要很強」與「不能遮住文字」的矛盾：
-      // 用顏料達成強度一定會擋字，用光就不會。
-      ctx.globalCompositeOperation = 'lighter'
+      // 這一點試錯了兩次才想通：白天的底是白卡片與淺藍天空，
+      // 而任何「加亮」的模式（lighter、screen）碰到白色都只會得到白色 ——
+      // 光芒壓在卡片上時，數學上就不可能顯示出來。那就是它一直
+      // 沒有出現的原因。
+      //
+      // 所以白天的光芒只能是「比底色略暖」的一層，靠色相差而不是
+      // 亮度差被看見。文字仍然讀得到：白卡片疊上這層之後底色約是
+      // (255, 246, 220)，而字是接近黑的深藍，對比幾乎不變。
+      ctx.globalCompositeOperation = 'source-over'
 
       rays = rays.filter((r) => {
         r.life += 16
@@ -945,7 +953,10 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         // 放到卡片之上以後，同樣的亮度會顯得強得多 —— 先前它被
         // 卡片擋掉了大半。這裡砍到三分之一，讓它回到「一道光經過」
         // 而不是「畫面被打上一盞燈」
-        const a = 0.13 * fade * r.weight * shimmer
+        // fade 給一個下限。不給的話，一道光芒大半輩子都處在淡入淡出
+        // 的兩端，實際看到的平均亮度遠低於這個係數 —— 那是先前
+        // 「調了好幾次還是看不見」的原因之一
+        const a = 1 * Math.max(0.6, fade) * r.weight * shimmer
 
         const g = ctx.createLinearGradient(sx, sy,
           sx + Math.cos(r.angle) * r.length,
@@ -954,16 +965,24 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         // 中途就淡光的話會變成「一小段光暈」而不是「射穿」
         // 沿長度持續淡化，不要整條同樣濃。
         // 光從太陽出發，越遠越散 —— 均勻的一整條會像實心的色帶
-        g.addColorStop(0, `rgba(255, 238, 158, ${a})`)
-        g.addColorStop(0.22, `rgba(255, 232, 140, ${a * 0.78})`)
-        g.addColorStop(0.5, `rgba(255, 226, 124, ${a * 0.48})`)
-        g.addColorStop(0.76, `rgba(255, 230, 140, ${a * 0.22})`)
-        g.addColorStop(1, 'rgba(255, 238, 164, 0)')
+        g.addColorStop(0, `rgba(255, 214, 104, ${a})`)
+        g.addColorStop(0.24, `rgba(255, 206, 92, ${a * 0.72})`)
+        g.addColorStop(0.55, `rgba(255, 204, 96, ${a * 0.4})`)
+        g.addColorStop(0.8, `rgba(255, 212, 118, ${a * 0.16})`)
+        g.addColorStop(1, 'rgba(255, 220, 142, 0)')
         ctx.fillStyle = g
 
-        // 一道楔形：從太陽的一個點往外張開
+        // 從光暈的邊緣起算，不是從太陽的中心點。
+        //
+        // 真實的星芒是強光在光圈邊緣繞射出來的，看起來就是從那團光的
+        // 外緣長出去 —— 從正中心畫的話，光芒的根部會被光暈整個蓋住，
+        // 反而顯得是「貼在太陽上的線」而不是「從光裡射出來」。
+        const inner = Math.max(46, Math.min(84, width * 0.075)) * 0.72
+        const ix = sx + Math.cos(r.angle) * inner
+        const iy = sy + Math.sin(r.angle) * inner
+
         ctx.beginPath()
-        ctx.moveTo(sx, sy)
+        ctx.moveTo(ix, iy)
         ctx.lineTo(
           sx + Math.cos(r.angle - r.spread) * r.length,
           sy + Math.sin(r.angle - r.spread) * r.length,
@@ -1489,6 +1508,44 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       ctx.globalCompositeOperation = isDark ? 'lighter' : 'source-over'
     }
 
+    function drawShooting(now: number) {
+      if (reduced || !isDark) return
+      if (!shooting && now >= nextShootingAt) spawnShooting()
+      if (!shooting) return
+
+      shooting.life += 16
+      const t = shooting.life / shooting.ttl
+      if (t >= 1) {
+        shooting = null
+        nextShootingAt = now + 3000 + Math.random() * 6000
+        return
+      }
+
+      const fade = Math.sin(Math.PI * t)
+      const travel = t * 380
+      const hx = shooting.x + Math.cos(shooting.angle) * travel
+      const hy = shooting.y + Math.sin(shooting.angle) * travel
+      const tx = hx - Math.cos(shooting.angle) * shooting.len
+      const ty = hy - Math.sin(shooting.angle) * shooting.len
+
+      const grad = ctx.createLinearGradient(tx, ty, hx, hy)
+      grad.addColorStop(0, `rgba(${starRGB}, 0)`)
+      grad.addColorStop(1, `rgba(${starRGB}, ${0.9 * fade})`)
+
+      ctx.beginPath()
+      ctx.strokeStyle = grad
+      ctx.lineWidth = 1.6
+      ctx.lineCap = 'round'
+      ctx.moveTo(tx, ty)
+      ctx.lineTo(hx, hy)
+      ctx.stroke()
+
+      // 頭部帶一點光暈，才像有質量的東西劃過去
+      ctx.globalAlpha = fade * 0.85
+      ctx.drawImage(sprite, hx - 11, hy - 11, 22, 22)
+      ctx.globalAlpha = 1
+    }
+
     /** 十字星芒 —— 只給最亮的幾顆，畫龍點睛用 */
     function drawSpike(x: number, y: number, len: number, a: number) {
       const g = ctx.createLinearGradient(x - len, y, x + len, y)
@@ -1531,9 +1588,30 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       // 它本來就該落在卡片「上面」而不是被卡片擋住。
       // 因為用疊加模式畫，落在字上也不會把字壓暗。
       if (front) {
-        if (!isDark) drawRays(now)
+        // 流星畫在這一層：它是掠過眼前的東西，躲在卡片後面就沒有意義了。
+        // 用加亮模式 —— 夜裡的底是深色，加亮才會亮，
+        // 而且深色的字加上一點光還是深色
+        if (isDark) {
+          ctx.globalCompositeOperation = 'lighter'
+          drawShooting(now)
+        }
         drawButterflies(now)
         ctx.globalCompositeOperation = 'source-over'
+        if (running) raf = requestAnimationFrame(draw)
+        return
+      }
+
+      // 光線自己一層。
+      //
+      // 它必須整張畫布以加亮的方式合成到頁面上（CSS 的 mix-blend-mode），
+      // 才會真的「加亮」底下的卡片 —— 先前畫在前景層裡，
+      // canvas 內部雖然用了 lighter，但那張畫布最後仍是以一般方式
+      // 疊上去的，於是淡黃色壓在白卡片上等於看不見。那就是
+      // 「光芒一直沒出現」的原因。
+      //
+      // 不能跟蝴蝶共用同一張：加亮模式會讓白天那些深色的蝴蝶整個消失。
+      if (raysOnly) {
+        if (!isDark) drawRays(now)
         if (running) raf = requestAnimationFrame(draw)
         return
       }
@@ -1584,44 +1662,6 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       }
 
       ctx.globalAlpha = 1
-
-      if (!reduced && isDark) {
-        if (!shooting && now >= nextShootingAt) spawnShooting()
-
-        if (shooting) {
-          shooting.life += 16
-          const t = shooting.life / shooting.ttl
-
-          if (t >= 1) {
-            shooting = null
-            nextShootingAt = now + 3000 + Math.random() * 6000
-          } else {
-            const fade = Math.sin(Math.PI * t)
-            const travel = t * 380
-            const hx = shooting.x + Math.cos(shooting.angle) * travel
-            const hy = shooting.y + Math.sin(shooting.angle) * travel
-            const tx = hx - Math.cos(shooting.angle) * shooting.len
-            const ty = hy - Math.sin(shooting.angle) * shooting.len
-
-            const grad = ctx.createLinearGradient(tx, ty, hx, hy)
-            grad.addColorStop(0, `rgba(${starRGB}, 0)`)
-            grad.addColorStop(1, `rgba(${starRGB}, ${0.9 * fade})`)
-
-            ctx.beginPath()
-            ctx.strokeStyle = grad
-            ctx.lineWidth = 1.6
-            ctx.lineCap = 'round'
-            ctx.moveTo(tx, ty)
-            ctx.lineTo(hx, hy)
-            ctx.stroke()
-
-            // 頭部帶一點光暈，才像有質量的東西劃過去
-            ctx.globalAlpha = fade * 0.85
-            ctx.drawImage(sprite, hx - 11, hy - 11, 22, 22)
-            ctx.globalAlpha = 1
-          }
-        }
-      }
 
       drawButterflies(now)
 
@@ -1685,8 +1725,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       aria-hidden
       className={`pointer-events-none fixed inset-0 h-full w-full ${
         // z-[5] 在內容之上、對話框（z-50）之下 —— 蝴蝶不該蓋住確認刪除的視窗
-        layer === 'butterflies' ? 'z-[5]' : '-z-10'
+        layer === 'butterflies' ? 'z-[5]' : layer === 'rays' ? 'z-[4]' : '-z-10'
       }`}
+      style={undefined}
     />
   )
 }

@@ -29,6 +29,10 @@ createRoot(document.getElementById('root')!).render(
         {/* 前景的幾隻蝴蝶。主群在卡片後面會被卡片的半透明底吃掉，
             手機上尤其明顯 —— 卡片幾乎佔滿寬度。這一層浮在內容之上，
             但很淡、很少、也比較小，只負責製造景深而不搶字 */}
+        {/* 光線自己一層，用 screen 混合模式疊在內容上 ——
+            它必須整張畫布加亮才看得見，而那個模式會讓深色的蝴蝶消失，
+            所以不能跟蝴蝶共用 */}
+        <StarField layer="rays" />
         <StarField layer="butterflies" />
         {/* 游標軌跡畫在最上層，所以不跟星空共用畫布 */}
         <CursorTrail />
