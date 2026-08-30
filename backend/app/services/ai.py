@@ -11,11 +11,14 @@ AI 寫作助手。
 擋不住換句話說，所以生成出來的東西仍要再看一次。
 """
 
+import logging
 import re
 
 import httpx
 
 from app.core.config import settings
+
+log = logging.getLogger("inkstone.ai")
 
 # --- 第一層：輸入端規則 ---
 
@@ -103,8 +106,11 @@ async def generate(prompt: str) -> AiResult:
 
     try:
         text = await _call_hf(prompt)
-    except (httpx.HTTPError, httpx.TimeoutException):
-        # 模型掛掉不該讓整個寫作流程停擺，退回本機樣板
+    except Exception:
+        # 模型掛掉不該讓整個寫作流程停擺，退回本機樣板。
+        # 但一定要記進日誌 —— 否則使用者只會覺得「AI 變笨了」，
+        # 沒有任何跡象顯示其實是模型呼叫失敗。
+        log.exception("Hugging Face 呼叫失敗，改用本機樣板")
         return _local_draft(prompt)
 
     if not screen_output(text):
@@ -119,11 +125,24 @@ async def generate(prompt: str) -> AiResult:
     )
 
 
+# Hugging Face 的 Inference Providers 統一入口，格式與 OpenAI 相容。
+#
+# 舊的 api-inference.huggingface.co/models/{id} 已經不是現在的做法 ——
+# 那個路徑對多數模型會回 404，而 404 看起來像「模型不存在」，
+# 實際上是端點本身就不對，很容易查錯方向。
+HF_ENDPOINT = "https://router.huggingface.co/v1/chat/completions"
+
+
 async def _call_hf(prompt: str) -> str:
-    url = f"https://api-inference.huggingface.co/models/{settings.HF_TEXT_MODEL}/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {settings.HF_TOKEN}"}
+    # 後綴決定選哪家供應商跑這個模型。
+    # :cheapest 挑每輸出 token 最便宜的 —— 這是文章草稿，
+    # 差幾百毫秒沒有感覺，但免費額度能多撐很久。
+    model = settings.HF_TEXT_MODEL
+    if ":" not in model.rsplit("/", 1)[-1]:
+        model = f"{model}:cheapest"
+
     payload = {
-        "model": settings.HF_TEXT_MODEL,
+        "model": model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
@@ -131,10 +150,34 @@ async def _call_hf(prompt: str) -> str:
         "max_tokens": 700,
         "temperature": 0.8,
     }
+
     async with httpx.AsyncClient(timeout=settings.HF_TIMEOUT_SECONDS) as client:
-        resp = await client.post(url, headers=headers, json=payload)
+        resp = await client.post(
+            HF_ENDPOINT,
+            headers={
+                "Authorization": f"Bearer {settings.HF_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+
+    if resp.status_code >= 400:
+        # 把供應商回的內容記進日誌。只看 HTTP 狀態碼分不出
+        # 「token 權限不足」與「這個模型沒人供應」，兩者都是 4xx。
+        log.error(
+            "Hugging Face 回應 %s（模型 %s）：%s",
+            resp.status_code,
+            model,
+            resp.text[:400],
+        )
+        if resp.status_code in (401, 403):
+            log.error(
+                "多半是 token 權限不足 —— Inference Providers 需要 fine-grained token "
+                "並勾選「Make calls to Inference Providers」，單純的 Read token 不夠。"
+            )
         resp.raise_for_status()
-        data = resp.json()
+
+    data = resp.json()
     return data["choices"][0]["message"]["content"]
 
 
