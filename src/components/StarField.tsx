@@ -961,22 +961,43 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
      * 路徑用三次貝茲從畫面外飛到另一側畫面外，兩個控制點隨機取，
      * 所以每一隻的弧線都不一樣 —— 走直線會很像遊戲裡的敵機。
      */
+    /**
+     * 畫面四邊之外的一個點。
+     *
+     * 進出的邊各自隨機，而且可以是同一邊 —— 蝴蝶從左邊飛進來、
+     * 繞一圈再從左邊出去，比每一隻都橫越畫面自然得多。
+     */
+    function edgePoint(edge: number): [number, number] {
+      const m = 90 // 退到畫面外的距離，進場前要完全看不見
+      if (edge === 0) return [-m, height * (0.08 + Math.random() * 0.84)]
+      if (edge === 1) return [width + m, height * (0.08 + Math.random() * 0.84)]
+      if (edge === 2) return [width * (0.08 + Math.random() * 0.84), -m]
+      return [width * (0.08 + Math.random() * 0.84), height + m]
+    }
+
     function spawnButterfly(delay = 0) {
       const pick = Math.floor(Math.random() * wings.length)
-      const fromLeft = Math.random() < 0.5
-      const x0 = fromLeft ? -80 : width + 80
-      const x1 = fromLeft ? width + 80 : -80
-      const y0 = height * (0.1 + Math.random() * 0.8)
-      const y1 = height * (0.1 + Math.random() * 0.8)
 
-      // 控制點往上下拉開，路徑才會有起伏而不是一條平緩的斜線
-      const swing = height * (0.18 + Math.random() * 0.3) * (Math.random() < 0.5 ? -1 : 1)
+      // 進出的邊獨立隨機。同一邊也可以 —— 那就是飛進來繞一圈再回去
+      const inEdge = Math.floor(Math.random() * 4)
+      const outEdge = Math.floor(Math.random() * 4)
+      const [x0, y0] = edgePoint(inEdge)
+      const [x1, y1] = edgePoint(outEdge)
+
+      // 控制點往畫面內側拉。不拉的話，同一邊進出的路徑會整條貼著
+      // 邊緣走，看起來像在畫面外擦過去而不是真的進來過
+      const aimX = width * (0.25 + Math.random() * 0.5)
+      const aimY = height * (0.2 + Math.random() * 0.6)
+      const swing = Math.min(width, height) * (0.12 + Math.random() * 0.22)
+      const sign = Math.random() < 0.5 ? -1 : 1
 
       butterflies.push({
         p: [
           x0, y0,
-          x0 + (x1 - x0) * 0.3, y0 + swing,
-          x0 + (x1 - x0) * 0.7, y1 - swing,
+          x0 + (aimX - x0) * 0.85 + swing * sign,
+          y0 + (aimY - y0) * 0.85 - swing * sign,
+          x1 + (aimX - x1) * 0.85 - swing * sign,
+          y1 + (aimY - y1) * 0.85 + swing * sign,
           x1, y1,
         ],
         t: 0,
