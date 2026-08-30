@@ -780,7 +780,10 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
           angle: center + (i / (count - 1) - 0.5) * fan + (Math.random() - 0.5) * 0.06,
           // 粗細差距要大。全部一樣粗會像梳子，有粗有細才像光
           spread: 0.008 + Math.random() * 0.046,
-          length: Math.hypot(width, height) * (1.1 + Math.random() * 0.6),
+          // 收短。橫貫整個畫面的光束太搶戲，也不像日常看到的陽光 ——
+          // 平常抬頭看到的就是太陽周圍那一圈散開的光，
+          // 而不是幾道打穿天空的光柱
+          length: Math.hypot(width, height) * (0.22 + Math.random() * 0.22),
           life: -i * (25 + Math.random() * 45),
           ttl: 620 + Math.random() * 460,
           weight: 0.45 + Math.random() * 0.55,
@@ -813,14 +816,12 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       // 六邊形來自光圈的葉片 —— 多數鏡頭是六片，所以光斑就是六邊形。
       // 菱形則是葉片閉得比較小時的樣子。兩種混在一起才像真的鏡頭，
       // 全部同一種形狀反而會露出是畫出來的。
+      // 只留靠近太陽的幾顆。整條光軸排滿光斑會把視線一路拉到
+      // 畫面另一端，那是攝影作品的語彙，不是一個安靜的閱讀介面
       const spots: Array<[number, number, number, number]> = [
-        [0.36, 10, 0.55, 6],
-        [0.54, 17, 0.4, 4],
-        [0.72, 7, 0.7, 6],
-        [0.92, 25, 0.32, 6],
-        [1.14, 12, 0.5, 4],
-        [1.36, 9, 0.6, 6],
-        [1.58, 15, 0.36, 6],
+        [0.2, 8, 0.5, 6],
+        [0.32, 13, 0.34, 4],
+        [0.46, 6, 0.55, 6],
       ]
 
       for (const [k, size, w, sides] of spots) {
@@ -828,7 +829,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         const y = sy + dy * k
         // 每顆各自緩慢地明滅，不會整串同步
         const shimmer = 0.7 + 0.3 * Math.sin(now * 0.0016 + k * 9)
-        const a = 0.1 * fade * w * shimmer
+        const a = 0.07 * fade * w * shimmer
         if (a < 0.004) continue
 
         ctx.save()
@@ -912,7 +913,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         // 放到卡片之上以後，同樣的亮度會顯得強得多 —— 先前它被
         // 卡片擋掉了大半。這裡砍到三分之一，讓它回到「一道光經過」
         // 而不是「畫面被打上一盞燈」
-        const a = 0.19 * fade * r.weight * shimmer
+        const a = 0.13 * fade * r.weight * shimmer
 
         const g = ctx.createLinearGradient(sx, sy,
           sx + Math.cos(r.angle) * r.length,
