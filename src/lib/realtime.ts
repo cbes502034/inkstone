@@ -170,9 +170,38 @@ export function useRealtime(): void {
 
     connect()
 
+    /**
+     * 回到前景、或網路恢復時，立刻重連。
+     *
+     * 這是「通知要重新整理才看得到」的主因。手機瀏覽器會凍結背景分頁
+     * 並切斷 WebSocket；使用者切回來時，指數退避可能已經排到三十秒後，
+     * 那段期間所有即時事件都收不到 —— 而重新整理會重建連線，
+     * 所以症狀看起來像是「一定要重新整理」。
+     *
+     * 退避本身是對的（伺服器休眠時不該用固定間隔洪水式重連），
+     * 但「使用者剛回來」是一個明確的訊號：現在值得馬上試一次。
+     */
+    const reconnectNow = () => {
+      if (closedByUs.current) return
+      if (wsRef.current?.readyState === WebSocket.OPEN) return
+      if (document.visibilityState !== 'visible') return
+
+      window.clearTimeout(timerRef.current)
+      // 退避歸零 —— 不然下一次斷線又從三十秒起跳
+      attemptRef.current = 0
+      connect()
+    }
+
+    document.addEventListener('visibilitychange', reconnectNow)
+    window.addEventListener('online', reconnectNow)
+    window.addEventListener('focus', reconnectNow)
+
     return () => {
       closedByUs.current = true
       window.clearTimeout(timerRef.current)
+      document.removeEventListener('visibilitychange', reconnectNow)
+      window.removeEventListener('online', reconnectNow)
+      window.removeEventListener('focus', reconnectNow)
       wsRef.current?.close()
       wsRef.current = null
       socket = null

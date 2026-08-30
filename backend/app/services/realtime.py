@@ -45,6 +45,10 @@ class ConnectionHub:
     def online_users(self) -> set[str]:
         return set(self._connections.keys())
 
+    def connection_count(self) -> int:
+        """總連線數。一個人開三個分頁就是三條，所以會比人數多。"""
+        return sum(len(v) for v in self._connections.values())
+
     async def send_to(self, user_id: str, event: str, data: Any) -> None:
         """
         推送給某個人的所有連線。

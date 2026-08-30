@@ -11,6 +11,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.services import ai as ai_service
 from app.services import storage as storage_service
+from app.services.realtime import hub
 from app.db.base import Base
 from app.db.session import engine
 
@@ -156,6 +157,13 @@ async def health() -> dict:
         # 光這一個字就足以判斷方向，而把供應商的錯誤全文公開出來
         # 等於把營運細節掛在網路上。要看完整訊息請打 /ai/diagnostics（需登入）。
         "aiLastError": ai_service.last_failure_code(),
+        # 目前有幾條 WebSocket 連著、幾個人。
+        #
+        # 這是為了回答「即時通知沒收到，是沒連上還是投遞有問題」——
+        # 先前查這件事只能靠猜，因為從外面完全看不出有沒有人連上。
+        # 只給數量，不給任何身分資訊。
+        "wsConnections": hub.connection_count(),
+        "wsUsers": len(hub.online_users()),
     }
 
 

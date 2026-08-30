@@ -61,15 +61,24 @@ async def create(
         "createdAt": note.created_at.isoformat(),
     }
 
-    if hub.is_online(user_id):
-        try:
-            await hub.send_to(user_id, "notification", payload)
-        except Exception:
-            # 通知已經入庫，下次開網站一定看得到，推送失敗不影響正確性
-            log.warning("通知推送失敗 user=%s", user_id, exc_info=True)
-    else:
-        # 人不在線上才走推播。兩條路都走的話同一則通知會出現兩次 ——
-        # 一次在網頁裡、一次在系統通知
+    # 先看在不在線，等一下決定要不要補推播。
+    # 順序很重要：要在送出之前問，送出的過程中連線可能剛好斷掉
+    online = hub.is_online(user_id)
+
+    # WebSocket 一律送。不在線的話這是無害的空操作 ——
+    # 而先前的寫法是「線上才送，否則改推播」二選一，
+    # 只要 is_online 判斷有任何偏差，通知就會被導去推播；
+    # 使用者沒開推播權限的話，那則通知就這樣消失了。
+    # 少送一則的代價遠大於偶爾重複一則。
+    try:
+        await hub.send_to(user_id, "notification", payload)
+    except Exception:
+        # 通知已經入庫，下次開網站一定看得到，推送失敗不影響正確性
+        log.warning("通知推送失敗 user=%s", user_id, exc_info=True)
+
+    if not online:
+        # 人不在線才補推播。在線的話網頁上已經跳出來了，
+        # 再送一次系統通知會變成同一件事被講兩遍
         try:
             await send_to_user(db, user_id, payload)
         except Exception:
