@@ -26,6 +26,12 @@ def _out(comment: Comment, viewer_id: str | None) -> CommentOut:
 
 @router.get("/posts/{post_id}/comments", response_model=list[CommentOut])
 async def list_comments(post_id: str, db: DbSession, viewer: OptionalUser) -> list[CommentOut]:
+    # 先確認文章還在。少了這一步，不存在的文章會回 200 加空陣列，
+    # 客戶端就分不出「這篇沒有留言」和「這篇已經被刪了」——
+    # 而 GET /posts/{id} 對同一個 id 是回 404，兩支 API 的說法不一致
+    if await db.get(Post, post_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "找不到這篇文章")
+
     stmt = (
         select(Comment)
         .options(selectinload(Comment.author))

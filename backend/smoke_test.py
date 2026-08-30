@@ -411,6 +411,30 @@ def main() -> int:
 
     r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
     check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
+    print("\n— 刪除自己的文章 —")
+    r = c.post("/posts", headers=a_tok,
+               json={"title": "等一下會被刪掉", "body": "內容 #會一起消失的標籤"})
+    doomed = r.json()["id"]
+    check("建立待刪文章", r.status_code == 201, r.text[:120])
+
+    r = c.post(f"/posts/{doomed}/comments", headers=b_tok, json={"body": "留一則言"})
+    check("別人在上面留言", r.status_code == 201, r.text[:120])
+
+    r = c.delete(f"/posts/{doomed}", headers=b_tok)
+    check("別人刪不掉", r.status_code == 403, str(r.status_code))
+
+    r = c.delete(f"/posts/{doomed}", headers=a_tok)
+    check("作者刪得掉", r.status_code == 204, r.text[:120])
+
+    r = c.get(f"/posts/{doomed}")
+    check("刪掉後讀不到", r.status_code == 404, str(r.status_code))
+
+    r = c.get(f"/posts/{doomed}/comments")
+    check("底下的留言一併消失", r.status_code == 404, str(r.status_code))
+
+    r = c.delete(f"/posts/{doomed}", headers=a_tok)
+    check("重複刪除回 404 而不是 500", r.status_code == 404, str(r.status_code))
+
     print("\n— 頭像與圖片儲存 —")
 
     def _data_url(color):

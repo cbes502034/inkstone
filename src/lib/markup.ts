@@ -105,6 +105,63 @@ export function toPlainText(source: string): string {
     .trim()
 }
 
+/**
+ * 產生列表用的摘要 —— 保留語法。
+ *
+ * 跟 excerpt() 的差別是回傳 token 而不是字串。
+ * excerpt() 會把符號剝光，那是給搜尋索引與 SEO description 用的；
+ * 動態牆的卡片要的是「跟寫出來一樣的樣子」，粗體要粗、標籤要是標籤，
+ * 用純文字版本的話使用者會覺得排版在列表裡被吃掉了。
+ */
+export function excerptTokens(source: string, max = 120): Token[] {
+  // 先把每一行串成一串，行與行之間補一個空格，換行才不會把兩句黏在一起
+  const flat: Token[] = []
+  for (const line of tokenize(source)) {
+    if (line.length === 0) continue
+    if (flat.length > 0) flat.push({ type: 'text', value: ' ' })
+    flat.push(...line)
+  }
+
+  const out: Token[] = []
+  let used = 0
+
+  for (const token of flat) {
+    // 連續空白壓成一個，摘要裡不需要保留原始排版
+    const value = token.type === 'text' ? token.value.replace(/\s+/g, ' ') : token.value
+    if (!value) continue
+    if (out.length === 0 && !value.trim()) continue // 開頭不要留空白
+
+    const room = max - used
+    if (room <= 0) return finish(out, true)
+
+    if (value.length <= room) {
+      out.push({ ...token, value })
+      used += value.length
+      continue
+    }
+
+    // 放不下了。標籤不切一半 —— 半個標籤看起來像壞掉，不像被截斷
+    if (token.type === 'tag') return finish(out, true)
+    out.push({ ...token, value: value.slice(0, room) })
+    return finish(out, true)
+  }
+
+  return finish(out, false)
+}
+
+/** 收尾：去掉結尾空白，被截斷的話補上刪節號（刪節號本身不套用任何樣式） */
+function finish(tokens: Token[], truncated: boolean): Token[] {
+  const out = [...tokens]
+  const last = out[out.length - 1]
+  if (last && last.type === 'text') {
+    const trimmed = last.value.trimEnd()
+    if (trimmed) out[out.length - 1] = { ...last, value: trimmed }
+    else out.pop()
+  }
+  if (truncated) out.push({ type: 'text', value: '…' })
+  return out
+}
+
 /** 產生列表用的摘要 */
 export function excerpt(source: string, max = 90): string {
   const plain = toPlainText(source).replace(/\s+/g, ' ')

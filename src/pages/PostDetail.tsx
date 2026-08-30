@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { LikersSheet } from '../components/LikersSheet'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ReportDialog } from '../components/ReportDialog'
 import { PostBody } from '../components/PostBody'
 import { Button, FadeIn, Skeleton } from '../components/ui'
@@ -20,6 +21,7 @@ export function PostDetail() {
   const [draft, setDraft] = useState('')
   const [showLikers, setShowLikers] = useState(false)
   const [reportPost, setReportPost] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [reportComment, setReportComment] = useState<string | null>(null)
 
   const { data: post, isLoading } = useQuery({
@@ -158,9 +160,7 @@ export function PostDetail() {
                 </Link>
                 <button
                   aria-label="刪除"
-                  onClick={() => {
-                    if (confirm('刪除後無法復原，確定嗎？')) removePost.mutate()
-                  }}
+                  onClick={() => setConfirmDelete(true)}
                   className="press grid size-9 place-items-center rounded-full text-ink-soft transition-colors hover:bg-accent-wash hover:text-accent"
                 >
                   <Trash2 size={17} />
@@ -324,6 +324,16 @@ export function PostDetail() {
         onClose={() => setReportComment(null)}
         targetType="comment"
         targetId={reportComment ?? ''}
+      />
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="刪除這篇文章？"
+        description="連同底下的留言一起消失，而且沒有辦法復原。"
+        confirmLabel="刪除"
+        loading={removePost.isPending}
+        onConfirm={() => removePost.mutate()}
+        onCancel={() => setConfirmDelete(false)}
       />
     </div>
   )

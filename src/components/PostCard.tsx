@@ -1,12 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Heart, MessageSquare, PencilLine } from 'lucide-react'
+import { Heart, MessageSquare, PencilLine, Trash2 } from 'lucide-react'
 import { motion } from 'motion/react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { posts } from '../lib/api'
-import { excerpt, extractTags, readingMinutes } from '../lib/markup'
+import { extractTags, readingMinutes } from '../lib/markup'
 import { relativeTime } from '../lib/time'
 import type { Post } from '../types'
 import { Avatar } from './Avatar'
+import { ConfirmDialog } from './ConfirmDialog'
+import { PostExcerpt } from './PostBody'
 
 export function PostCard({ post }: { post: Post }) {
   const navigate = useNavigate()
@@ -30,6 +33,19 @@ export function PostCard({ post }: { post: Post }) {
       // 失敗就還原，使用者不會看到假的成功狀態
       ctx?.snapshot.forEach(([key, data]) => qc.setQueryData(key, data))
     },
+  })
+
+  const [confirmDelete, setConfirmDelete] = useState(false)
+
+  const remove = useMutation({
+    mutationFn: () => posts.remove(post.id),
+    onSuccess: () => {
+      // 直接把它從列表拿掉，不等重新請求 —— 使用者剛按下刪除，
+      // 卡片還留在畫面上會讓人以為沒成功
+      removeEverywhere(qc, post.id)
+      setConfirmDelete(false)
+    },
+    onError: () => setConfirmDelete(false),
   })
 
   const tags = post.tags.length ? post.tags : extractTags(post.body)
@@ -69,17 +85,33 @@ export function PostCard({ post }: { post: Post }) {
         </div>
 
         {/* 只有自己的文章才有編輯 —— 後端同樣會驗證擁有者，不是只靠這裡藏按鈕 */}
+        {/* 只有自己的文章才有這兩顆 —— 後端同樣會驗證擁有者，不是只靠這裡藏按鈕 */}
         {post.isMine && (
-          <Link
-            to={`/write?edit=${post.id}`}
-            onClick={(e) => e.stopPropagation()}
-            aria-label="編輯這篇"
-            className="press ml-auto grid size-8 shrink-0 place-items-center rounded-full
-                       text-ink-faint opacity-0 transition-all hover:bg-paper-sunk hover:text-ink
-                       focus-visible:opacity-100 group-hover:opacity-100 max-md:opacity-100"
+          <div
+            className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity
+                       focus-within:opacity-100 group-hover:opacity-100 max-md:opacity-100"
           >
-            <PencilLine size={16} />
-          </Link>
+            <Link
+              to={`/write?edit=${post.id}`}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="編輯這篇"
+              className="press grid size-8 place-items-center rounded-full text-ink-faint
+                         transition-colors hover:bg-paper-sunk hover:text-ink"
+            >
+              <PencilLine size={16} />
+            </Link>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setConfirmDelete(true)
+              }}
+              aria-label="刪除這篇"
+              className="press grid size-8 place-items-center rounded-full text-ink-faint
+                         transition-colors hover:bg-accent-wash hover:text-accent"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -87,9 +119,11 @@ export function PostCard({ post }: { post: Post }) {
       <h2 className="mb-2 text-[21px] leading-snug tracking-tight text-ink sm:text-[23px]">
         {post.title}
       </h2>
-      <p className="mb-4 line-clamp-3 text-[15px] leading-relaxed text-ink-soft">
-        {excerpt(post.body, 120)}
-      </p>
+      <PostExcerpt
+        source={post.body}
+        max={120}
+        className="mb-4 line-clamp-3 text-[15px] leading-relaxed text-ink-soft"
+      />
 
       {/* 標籤 */}
       {tags.length > 0 && (
@@ -140,8 +174,36 @@ export function PostCard({ post }: { post: Post }) {
 
         <span className="ml-auto">{readingMinutes(post.body)} 分鐘</span>
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="刪除這篇文章？"
+        description="連同底下的留言一起消失，而且沒有辦法復原。"
+        confirmLabel="刪除"
+        loading={remove.isPending}
+        onConfirm={() => remove.mutate()}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </motion.article>
   )
+}
+
+/** 從所有列表快取裡移除這篇 —— 動態牆、搜尋、個人頁可能都有它 */
+function removeEverywhere(qc: ReturnType<typeof useQueryClient>, postId: string) {
+  qc.setQueriesData({ queryKey: ['feed'] }, (old: any) => {
+    if (!old?.pages) return old
+    return {
+      ...old,
+      pages: old.pages.map((page: any) => ({
+        ...page,
+        items: page.items.filter((p: Post) => p.id !== postId),
+      })),
+    }
+  })
+  qc.setQueriesData({ queryKey: ['posts', 'mine'] }, (old: any) =>
+    Array.isArray(old) ? old.filter((p: Post) => p.id !== postId) : old,
+  )
+  qc.removeQueries({ queryKey: ['post', postId] })
 }
 
 /** 同一篇文章可能出現在多個查詢快取裡（動態牆、搜尋、個人頁），一起更新 */
