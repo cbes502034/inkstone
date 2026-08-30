@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { OfflineNotice } from './components/OfflineNotice'
+import { CursorTrail } from './components/CursorTrail'
 import { StarField } from './components/StarField'
 import './index.css'
 
@@ -25,6 +26,8 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <StarField />
+        {/* 游標軌跡畫在最上層，所以不跟星空共用畫布 */}
+        <CursorTrail />
         <OfflineNotice />
         <BrowserRouter>
           <App />
