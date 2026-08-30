@@ -252,7 +252,7 @@
     /* 白天是暖金 —— 紫色星光是夜晚的語彙，晴空底下該是陽光的顏色。
        淺色底上不能靠亮度取勝，所以中心用較深的琥珀壓住，外圈才是暖暈 */
     :root[data-theme='light'] body {
-      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='8' fill='%23f59e0b' fill-opacity='0.20'/%3E%3Ccircle cx='10' cy='10' r='4.5' fill='%23f59e0b' fill-opacity='0.6'/%3E%3Ccircle cx='10' cy='10' r='2.6' fill='%23b45309'/%3E%3C/svg%3E") 10 10, auto;
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='8' fill='%23ffd700' fill-opacity='0.26'/%3E%3Ccircle cx='10' cy='10' r='4.5' fill='%23ffd94a' fill-opacity='0.72'/%3E%3Ccircle cx='10' cy='10' r='2.6' fill='%23c99700'/%3E%3C/svg%3E") 10 10, auto;
     }
 
     a,
@@ -270,7 +270,7 @@
     :root[data-theme='light'] [role='switch'],
     :root[data-theme='light'] label,
     :root[data-theme='light'] summary {
-      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23f59e0b' fill-opacity='0.26'/%3E%3Ccircle cx='12' cy='12' r='6' fill='%23fbbf24' fill-opacity='0.7'/%3E%3Ccircle cx='12' cy='12' r='3.4' fill='%2392400e'/%3E%3C/svg%3E") 12 12, pointer;
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23ffd700' fill-opacity='0.32'/%3E%3Ccircle cx='12' cy='12' r='6' fill='%23ffdf5e' fill-opacity='0.82'/%3E%3Ccircle cx='12' cy='12' r='3.4' fill='%23b8860b'/%3E%3C/svg%3E") 12 12, pointer;
     }
 
     input,

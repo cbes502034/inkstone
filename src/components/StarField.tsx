@@ -36,14 +36,15 @@ interface Shooting {
 }
 
 interface Ray {
-  /** 起點。整條一次出現，不會移動 */
-  x: number
-  y: number
+  /** 從太陽算起的方向 */
   angle: number
+  /** 張角。每一道的粗細不同，成束才不會像梳子 */
+  spread: number
   length: number
-  width: number
   life: number
   ttl: number
+  /** 這一道的亮度權重。有粗有細、有亮有暗才像真的光芒 */
+  weight: number
 }
 
 interface Cloud {
@@ -231,7 +232,7 @@ const MAX_BUTTERFLIES = 1
  */
 function makeMoonSprite(r: number): HTMLCanvasElement {
   // r 是月亮本體的視半徑；貼圖再往外留兩倍多給光暈
-  const size = Math.ceil(r * 5)
+  const size = Math.ceil(r * 7)
   const c = document.createElement('canvas')
   c.width = c.height = size
   const g = c.getContext('2d')!
@@ -249,11 +250,14 @@ function makeMoonSprite(r: number): HTMLCanvasElement {
   const rim = r / half
 
   const glow = g.createRadialGradient(cx, cy, 0, cx, cy, half)
-  glow.addColorStop(0, 'rgba(244, 248, 255, 0.4)')
-  glow.addColorStop(body, 'rgba(236, 243, 255, 0.33)')
-  glow.addColorStop(rim, 'rgba(214, 228, 252, 0.17)')
-  glow.addColorStop(rim + (1 - rim) * 0.3, 'rgba(190, 210, 250, 0.06)')
-  glow.addColorStop(1, 'rgba(170, 194, 246, 0)')
+  glow.addColorStop(0, 'rgba(246, 250, 255, 0.46)')
+  glow.addColorStop(body, 'rgba(238, 245, 255, 0.4)')
+  glow.addColorStop(rim, 'rgba(216, 231, 253, 0.28)')
+  // 光暈往外拉得更遠、掉得更慢 —— 太陽就是這樣，
+  // 它的存在感有一半來自那片擴散出去的光，而不是本體
+  glow.addColorStop(rim + (1 - rim) * 0.25, 'rgba(198, 218, 251, 0.16)')
+  glow.addColorStop(rim + (1 - rim) * 0.55, 'rgba(180, 204, 248, 0.07)')
+  glow.addColorStop(1, 'rgba(166, 190, 244, 0)')
   g.fillStyle = glow
   g.fillRect(0, 0, size, size)
 
@@ -716,51 +720,125 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       ctx.fillRect(0, 0, width, height)
 
       // 陽光：右上角一團暖光。位置固定，像一個確定的光源
+      const [sx, sy] = sunPos()
       const sun = ctx.createRadialGradient(
-        width * 0.82, height * 0.06, 0,
-        width * 0.82, height * 0.06, Math.max(width, height) * 0.55,
+        sx, sy, 0,
+        sx, sy, Math.max(width, height) * 0.6,
       )
-      sun.addColorStop(0, 'rgba(255, 244, 214, 0.85)')
-      sun.addColorStop(0.28, 'rgba(255, 238, 205, 0.34)')
-      sun.addColorStop(1, 'rgba(255, 236, 200, 0)')
+      // 本體要有一小塊接近純白的核 —— 那是「這裡有一顆太陽」的訊號。
+      // 只有一團漸層的話，雲一飄過來就把它整個蓋掉了
+      // 要看得出是黃的。純白的核在藍天上只會像一塊反光，
+      // 而太陽在人的印象裡就是黃色的 —— 核心留一點白提亮，
+      // 但緊接著就要進到明確的金黃
+      sun.addColorStop(0, 'rgba(255, 252, 224, 0.98)')
+      sun.addColorStop(0.04, 'rgba(255, 240, 160, 0.94)')
+      sun.addColorStop(0.1, 'rgba(255, 224, 120, 0.6)')
+      sun.addColorStop(0.24, 'rgba(255, 220, 130, 0.32)')
+      sun.addColorStop(0.55, 'rgba(255, 226, 160, 0.12)')
+      sun.addColorStop(1, 'rgba(255, 232, 180, 0)')
       ctx.fillStyle = sun
       ctx.fillRect(0, 0, width, height)
     }
 
+    /** 太陽的位置。光芒從這裡放射出去，跟畫面上那團暖光是同一個光源 */
+    function sunPos(): [number, number] {
+      return [width * 0.82, height * 0.06]
+    }
+
     /**
-     * 白天的光線 —— 陽光撒下來。
+     * 白天的光芒 —— 陽光從太陽放射出來。
      *
      * 這是流星在白天的對應物，但兩者的行為必須不一樣：
      *
      *   流星是「墜落」—— 一個亮點拖著尾巴劃過去，重點在移動。
-     *   光線是「撒」—— 整條一次出現、閃一下、整條消失，重點在瞬間。
+     *   光芒是「撒」—— 整束一次出現、閃一下、整束消失，重點在瞬間。
      *
-     * 所以這裡不做位移。一次撒下兩到四道，彼此角度與長短略有不同，
-     * 像陽光穿過雲隙那樣成束落下。
+     * 形狀也不同。第一版畫成幾道平行的光帶，那是錯的 ——
+     * 真實的陽光是從一個點放射出去的，每一道的角度都不一樣，
+     * 越遠越開。平行的光帶看起來像百葉窗，不像陽光。
+     *
+     * 而且平行的版本還有個實作上的錯：起點放在畫面上方之外、往左下
+     * 延伸，等它降到畫面頂端時已經往左偏了七百多像素，整條落在
+     * 左邊界外 —— 所以根本看不到。從太陽發散就沒有這個問題，
+     * 光源在畫面內，光芒必定經過畫面。
      */
     function spawnRays() {
-      const count = 2 + Math.floor(Math.random() * 3)
-      // 同一束的角度接近 —— 它們是同一個太陽穿過同一片雲隙來的
-      const baseAngle = 1.02 + (Math.random() - 0.5) * 0.22
-      const baseX = width * (0.15 + Math.random() * 0.7)
-
-      // 長度取對角線再放大 —— 不論從哪個角度斜過來，兩端都落在
-      // 畫面之外，所以看到的是一條「貫穿」的線，而不是一段浮在
-      // 中間、看得到頭尾的光棒
-      const span = Math.hypot(width, height) * 1.8
+      // 一次六到十道，角度散開成一束
+      const count = 6 + Math.floor(Math.random() * 5)
+      // 太陽在右上，光芒往左下灑。中心方向大約是 135°
+      const center = Math.PI * 0.72 + (Math.random() - 0.5) * 0.5
+      const fan = 0.55 + Math.random() * 0.5
 
       for (let i = 0; i < count; i++) {
         rays.push({
-          x: baseX + (i - count / 2) * (34 + Math.random() * 70),
-          // 起點退到畫面上方之外，斜下來才能完整穿過
-          y: -height * 0.55,
-          angle: baseAngle + (Math.random() - 0.5) * 0.1,
-          length: span,
-          width: 9 + Math.random() * 18,
-          // 同一束裡彼此錯開幾十毫秒，像先後亮起來的
-          life: -i * (60 + Math.random() * 90),
-          ttl: 520 + Math.random() * 380,
+          angle: center + (i / (count - 1) - 0.5) * fan + (Math.random() - 0.5) * 0.06,
+          // 粗細差距要大。全部一樣粗會像梳子，有粗有細才像光
+          spread: 0.006 + Math.random() * 0.032,
+          length: Math.hypot(width, height) * (0.7 + Math.random() * 0.7),
+          life: -i * (25 + Math.random() * 45),
+          ttl: 620 + Math.random() * 460,
+          weight: 0.45 + Math.random() * 0.55,
         })
+      }
+    }
+
+    /**
+     * 光斑 —— 沿著光軸排開的一串菱形。
+     *
+     * 這是鏡頭光暈：強光進到鏡頭裡，在光圈的葉片之間反射，
+     * 在光源到畫面中心的連線上留下一串多邊形的影子。
+     * 參考圖裡那幾顆就是它，而它們正是讓一束光「看起來被拍下來」
+     * 而不是「畫上去」的關鍵。
+     *
+     * 位置不是隨便放的：必定落在太陽與畫面中心的連線上，
+     * 而且會延伸到中心的另一側。放錯位置的話眼睛會立刻覺得不對，
+     * 雖然多數人說不出為什麼。
+     */
+    function drawFlares(now: number, fade: number) {
+      const [sx, sy] = sunPos()
+      const cx = width / 2
+      const cy = height / 2
+      const dx = cx - sx
+      const dy = cy - sy
+
+      // 每一顆的位置（沿連線的比例）、大小、亮度。
+      // 疏密不均才自然，等距排開會像一串珠子
+      const spots: Array<[number, number, number]> = [
+        [0.42, 9, 0.5],
+        [0.6, 15, 0.34],
+        [0.78, 6, 0.6],
+        [1.0, 22, 0.26],
+        [1.26, 11, 0.4],
+        [1.52, 7, 0.5],
+      ]
+
+      for (const [k, size, w] of spots) {
+        const x = sx + dx * k
+        const y = sy + dy * k
+        // 每顆各自緩慢地明滅，不會整串同步
+        const shimmer = 0.7 + 0.3 * Math.sin(now * 0.0016 + k * 9)
+        const a = 0.13 * fade * w * shimmer
+        if (a < 0.004) continue
+
+        ctx.save()
+        ctx.translate(x, y)
+        // 菱形的長軸順著光軸 —— 光暈是沿著那條線被拉開的
+        ctx.rotate(Math.atan2(dy, dx))
+
+        const g = ctx.createLinearGradient(-size, 0, size, 0)
+        g.addColorStop(0, `rgba(255, 238, 170, 0)`)
+        g.addColorStop(0.5, `rgba(255, 243, 186, ${a})`)
+        g.addColorStop(1, `rgba(255, 238, 170, 0)`)
+        ctx.fillStyle = g
+
+        ctx.beginPath()
+        ctx.moveTo(-size, 0)
+        ctx.lineTo(0, -size * 0.42)
+        ctx.lineTo(size, 0)
+        ctx.lineTo(0, size * 0.42)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
       }
     }
 
@@ -771,6 +849,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         spawnRays()
         nextRayAt = now + 6000 + Math.random() * 9000
       }
+      if (rays.length === 0) return
+
+      const [sx, sy] = sunPos()
 
       rays = rays.filter((r) => {
         r.life += 16
@@ -779,39 +860,43 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         if (t >= 1) return false
 
         // 快亮、慢滅。閃光就是這個形狀 —— 平均的淡入淡出會像在呼吸
-        const fade = t < 0.18 ? t / 0.18 : (1 - t) / 0.82
+        const fade = t < 0.16 ? t / 0.16 : (1 - t) / 0.84
 
-        ctx.save()
-        ctx.translate(r.x, r.y)
-        ctx.rotate(r.angle)
+        // 顏色壓得很淡。太陽光本來就不該有明確的顏色 ——
+        // 一旦看得出「那是一片黃色」，畫面立刻變髒變亂
+        const a = 0.16 * fade * r.weight
 
-        // 顏色要能在白色卡片上看得見。
-        //
-        // 純白或接近白的暖光壓在白卡片上等於隱形 —— 這是雲朵游標
-        // 踩過的同一個坑。改成帶琥珀的暖色：在藍天上它是亮的，
-        // 在白卡片上它是暖的，兩種底色各自靠不同的差異被看見。
-        //
-        // 兩端淡、中段濃：光線貫穿畫面，但最實的是中間那一段，
-        // 這樣才有「灑下來」的方向感而不是一根均勻的柱子
-        const g = ctx.createLinearGradient(0, 0, 0, r.length)
-        g.addColorStop(0, `rgba(255, 236, 186, 0)`)
-        g.addColorStop(0.22, `rgba(255, 231, 175, ${0.4 * fade})`)
-        g.addColorStop(0.48, `rgba(255, 226, 160, ${0.58 * fade})`)
-        g.addColorStop(0.76, `rgba(255, 233, 182, ${0.34 * fade})`)
-        g.addColorStop(1, 'rgba(255, 240, 200, 0)')
+        const g = ctx.createLinearGradient(sx, sy,
+          sx + Math.cos(r.angle) * r.length,
+          sy + Math.sin(r.angle) * r.length)
+        g.addColorStop(0, `rgba(255, 240, 176, ${a})`)
+        g.addColorStop(0.35, `rgba(255, 236, 168, ${a * 0.7})`)
+        g.addColorStop(1, 'rgba(255, 238, 180, 0)')
         ctx.fillStyle = g
 
-        // 上寬下窄，像一道從縫隙灑開的光
+        // 一道楔形：從太陽的一個點往外張開
         ctx.beginPath()
-        ctx.moveTo(-r.width / 2, 0)
-        ctx.lineTo(r.width / 2, 0)
-        ctx.lineTo(r.width * 1.4, r.length)
-        ctx.lineTo(-r.width * 1.4, r.length)
+        ctx.moveTo(sx, sy)
+        ctx.lineTo(
+          sx + Math.cos(r.angle - r.spread) * r.length,
+          sy + Math.sin(r.angle - r.spread) * r.length,
+        )
+        ctx.lineTo(
+          sx + Math.cos(r.angle + r.spread) * r.length,
+          sy + Math.sin(r.angle + r.spread) * r.length,
+        )
         ctx.closePath()
         ctx.fill()
-        ctx.restore()
         return true
       })
+
+      // 光斑跟著整束一起亮。用最亮那一道的進度當基準 ——
+      // 它們是同一道強光造成的，本來就該同時出現
+      if (rays.length > 0) {
+        const lead = rays[0]
+        const lt = Math.max(0, lead.life) / lead.ttl
+        drawFlares(now, lt < 0.16 ? lt / 0.16 : (1 - lt) / 0.84)
+      }
     }
 
     function buildClouds() {
@@ -824,8 +909,16 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       clouds = Array.from({ length: count }, () => {
         const puffCount = 4 + Math.floor(Math.random() * 4)
         const base = (34 + Math.random() * 46) * sizeBoost
+        // 避開太陽所在的那一角。雲從它前面飄過去會把它整個抹掉，
+        // 而天上的雲本來也不會剛好停在太陽上
+        const sunX = width * 0.82
+        let cx = Math.random() * (width + 400) - 200
+        if (Math.abs(cx - sunX) < width * 0.22) {
+          cx = cx < sunX ? cx - width * 0.24 : cx + width * 0.24
+        }
+
         return {
-          x: Math.random() * (width + 400) - 200,
+          x: cx,
           // 只在上半部。雲壓在文字上會變成髒污，而且天上本來就沒有低到腳邊的雲。
           // 手機上可以放低一點 —— 那裡的天空範圍本來就窄
           y: height * (0.03 + Math.random() * (narrow ? 0.42 : 0.34)),
