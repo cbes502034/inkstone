@@ -24,6 +24,11 @@ interface Glow {
   speed: number
   alpha: number
   spike: boolean
+  /** 已經亮了多久（毫秒）。到期就熄掉，換一顆長在別處的新星 */
+  life: number
+  ttl: number
+  /** 被星座用到的星不汰換 —— 不然連線會在畫面上跳來跳去 */
+  locked: boolean
 }
 
 /** 一個星座：把幾顆相鄰的亮星連起來的一條折線 */
@@ -32,6 +37,9 @@ interface Constellation {
   path: number[]
   /** 各自的呼吸相位，讓每個星座明滅的時機不同 */
   phase: number
+  /** 星座也會換。同一組圖案掛一整晚會像是畫上去的背景 */
+  life: number
+  ttl: number
 }
 
 interface Shooting {
@@ -39,6 +47,17 @@ interface Shooting {
   y: number
   len: number
   angle: number
+  life: number
+  ttl: number
+}
+
+/** 一顆多邊形光斑。跟著光芒一起出現，但位置各自隨機 */
+interface Flare {
+  x: number
+  y: number
+  size: number
+  sides: number
+  turn: number
   life: number
   ttl: number
 }
@@ -707,6 +726,7 @@ export function StarField({
     let clouds: Cloud[] = []
     let moon: HTMLCanvasElement | null = null
     let rays: Ray[] = []
+    let flares: Flare[] = []
     let nextRayAt = performance.now() + 1200 + Math.random() * 2000
 
     /**
@@ -821,6 +841,25 @@ export function StarField({
         })
       }
 
+      // 光斑：兩顆，位置各自隨機、尺寸很大。
+      //
+      // 先前沿著光軸排了一串小的，那是照片裡光暈的排法，
+      // 但在一個會捲動的介面上，那串東西讀起來像畫面髒了。
+      // 改成偶爾出現的兩顆大的 —— 少而大才會被當成「光」，
+      // 多而小只會被當成雜訊。
+      flares = []
+      for (let i = 0; i < 2; i++) {
+        flares.push({
+          x: width * (0.12 + Math.random() * 0.76),
+          y: height * (0.1 + Math.random() * 0.7),
+          size: Math.min(width, height) * (0.09 + Math.random() * 0.11),
+          sides: Math.random() < 0.6 ? 6 : 4,
+          turn: Math.random() * Math.PI,
+          life: -i * (120 + Math.random() * 260),
+          ttl: 1000 + Math.random() * 700,
+        })
+      }
+
       // 兩道特別長的水平光條。真實鏡頭幾乎都有這個，
       // 它比任何細節都更能讓人認出「這是強光進到鏡頭裡」
       for (const dir of [0, Math.PI]) {
@@ -847,77 +886,74 @@ export function StarField({
      * 而且會延伸到中心的另一側。放錯位置的話眼睛會立刻覺得不對，
      * 雖然多數人說不出為什麼。
      */
-    function drawFlares(now: number, fade: number) {
-      const [sx, sy] = sunPos()
-      const cx = width / 2
-      const cy = height / 2
-      const dx = cx - sx
-      const dy = cy - sy
+    function drawFlares() {
+      if (flares.length === 0) return
 
-      // 每一顆的位置（沿連線的比例）、大小、亮度、幾邊形。
-      // 疏密不均才自然，等距排開會像一串珠子。
-      //
-      // 六邊形來自光圈的葉片 —— 多數鏡頭是六片，所以光斑就是六邊形。
-      // 菱形則是葉片閉得比較小時的樣子。兩種混在一起才像真的鏡頭，
-      // 全部同一種形狀反而會露出是畫出來的。
-      // 只留靠近太陽的幾顆。整條光軸排滿光斑會把視線一路拉到
-      // 畫面另一端，那是攝影作品的語彙，不是一個安靜的閱讀介面
-      // 大顆。小小幾點會被當成髒污或雜訊 ——
-      // 鏡頭光暈之所以好看，一部分就來自那幾顆佔了畫面一小塊的大光斑。
-      // 沿光軸走得遠一點，畫面各處都會出現
-      const spots: Array<[number, number, number, number]> = [
-        [0.16, 26, 0.5, 6],
-        [0.3, 48, 0.3, 4],
-        [0.44, 20, 0.55, 6],
-        [0.62, 72, 0.22, 6],
-        [0.84, 34, 0.4, 4],
-        [1.08, 90, 0.18, 6],
-        [1.32, 40, 0.34, 6],
-      ]
+      flares = flares.filter((f) => {
+        f.life += 16
+        if (f.life < 0) return true
+        const t = f.life / f.ttl
+        if (t >= 1) return false
 
-      for (const [k, size, w, sides] of spots) {
-        const x = sx + dx * k
-        const y = sy + dy * k
-        // 每顆各自緩慢地明滅，不會整串同步
-        const shimmer = 0.7 + 0.3 * Math.sin(now * 0.0016 + k * 9)
-        // 跟光線同一個道理：白底上的東西必須靠色相差被看見，
-        // 而且 fade 要給下限，否則大半輩子都在淡入淡出的兩端
-        const a = 0.85 * Math.max(0.55, fade) * w * shimmer
-        if (a < 0.004) continue
+        // 快亮、慢滅
+        const fade = t < 0.18 ? t / 0.18 : (1 - t) / 0.82
+        const a = 0.62 * fade
 
         ctx.save()
-        ctx.translate(x, y)
-        // 長軸順著光軸 —— 光暈是沿著那條線被拉開的
-        ctx.rotate(Math.atan2(dy, dx))
-
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size)
-        g.addColorStop(0, `rgba(255, 245, 194, ${a})`)
-        g.addColorStop(0.55, `rgba(255, 241, 182, ${a * 0.64})`)
-        g.addColorStop(1, 'rgba(255, 244, 196, 0)')
-        ctx.fillStyle = g
+        ctx.translate(f.x, f.y)
+        ctx.rotate(f.turn)
 
         ctx.beginPath()
-        if (sides === 4) {
-          // 菱形：長軸壓扁，順著光軸拉開
-          ctx.moveTo(-size, 0)
-          ctx.lineTo(0, -size * 0.42)
-          ctx.lineTo(size, 0)
-          ctx.lineTo(0, size * 0.42)
-        } else {
-          // 六邊形：轉一點角度，不要每顆都同一個朝向
-          const turn = k * 1.7
-          for (let i = 0; i < 6; i++) {
-            const ang = turn + (i / 6) * Math.PI * 2
-            const px = Math.cos(ang) * size
-            const py = Math.sin(ang) * size * 0.82
-            if (i === 0) ctx.moveTo(px, py)
-            else ctx.lineTo(px, py)
-          }
-        }
-        ctx.closePath()
+        polygon(f.size, f.sides)
+
+        // 內裡是淡黃的半透明，邊緣化開。
+        // 實心的話會變成一塊貼在畫面上的色紙，而光斑是透光的
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, f.size)
+        g.addColorStop(0, `rgba(255, 246, 198, ${a * 0.34})`)
+        g.addColorStop(0.58, `rgba(255, 242, 182, ${a * 0.5})`)
+        g.addColorStop(0.9, `rgba(255, 238, 168, ${a * 0.72})`)
+        g.addColorStop(1, `rgba(255, 236, 160, ${a * 0.4})`)
+        ctx.fillStyle = g
         ctx.fill()
+
+        // 輪廓。這是光斑看不看得見的關鍵 ——
+        // 在白色的卡片上，淡黃的填色跟白底幾乎是同一個顏色，
+        // 唯一能被眼睛抓到的是那一圈邊。所以邊要用彩度高一點的琥珀色，
+        // 靠色相而不是亮度被看見；線細，壓在文字上也讀得到。
+        ctx.strokeStyle = `rgba(228, 176, 64, ${a * 0.85})`
+        ctx.lineWidth = 2
+        ctx.lineJoin = 'round'
+        ctx.stroke()
+
+        // 內圈。真實的光斑是光圈葉片的重像，邊界不只一層
+        ctx.beginPath()
+        polygon(f.size * 0.66, f.sides)
+        ctx.strokeStyle = `rgba(233, 190, 92, ${a * 0.45})`
+        ctx.lineWidth = 1.2
+        ctx.stroke()
+
         ctx.restore()
+        return true
+      })
+    }
+
+    /** 畫一個多邊形的路徑：六邊形，或壓扁的菱形 */
+    function polygon(size: number, sides: number) {
+      if (sides === 4) {
+        ctx.moveTo(-size, 0)
+        ctx.lineTo(0, -size * 0.62)
+        ctx.lineTo(size, 0)
+        ctx.lineTo(0, size * 0.62)
+      } else {
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2
+          const px = Math.cos(ang) * size
+          const py = Math.sin(ang) * size * 0.88
+          if (i === 0) ctx.moveTo(px, py)
+          else ctx.lineTo(px, py)
+        }
       }
+      ctx.closePath()
     }
 
     function drawRays(now: number) {
@@ -927,7 +963,8 @@ export function StarField({
         spawnRays()
         nextRayAt = now + 3500 + Math.random() * 5000
       }
-      if (rays.length === 0) return
+      // 光斑活得比光芒久一點，這裡不能因為光芒收完就提早離開
+      if (rays.length === 0 && flares.length === 0) return
 
       const [sx, sy] = sunPos()
 
@@ -1014,13 +1051,9 @@ export function StarField({
         return true
       })
 
-      // 光斑跟著整束一起亮。用最亮那一道的進度當基準 ——
-      // 它們是同一道強光造成的，本來就該同時出現
-      if (rays.length > 0) {
-        const lead = rays[0]
-        const lt = Math.max(0, lead.life) / lead.ttl
-        drawFlares(now, lt < 0.16 ? lt / 0.16 : (1 - lt) / 0.84)
-      }
+      // 光斑自己算生命週期，不跟著光芒 ——
+      // 它們亮得比較久，收得比較慢
+      drawFlares()
 
       // 還給主迴圈，不要把疊加模式留成別人的副作用
       ctx.globalCompositeOperation = 'source-over'
@@ -1159,7 +1192,6 @@ export function StarField({
 
       dust = buildDust()
       buildClouds()
-      if (isDark) buildConstellations()
 
       // 尺寸跟著畫面走，小螢幕上不要出現一顆佔掉半邊天的月亮。
       // 但下限要夠大 —— 太小的話不論怎麼畫都只會被當成星星
@@ -1169,19 +1201,39 @@ export function StarField({
       // 眼前的蝴蝶憑空消失，那個突兀遠大於路徑偏一點點。
 
       const count = Math.round((width * height) / 9000)
-      glows = Array.from({ length: count }, () => {
-        const { x, y, w } = sampleStar()
-        const depth = Math.random()
-        return {
-          x,
-          y,
-          size: 6 + depth * 22,
-          phase: Math.random() * Math.PI * 2,
-          speed: 0.4 + Math.random() * 0.9,
-          alpha: (0.3 + depth * 0.7) * (0.45 + w * 0.55),
-          spike: depth > 0.86,
-        }
-      })
+      glows = Array.from({ length: count }, () => makeGlow(false))
+
+      // 星座一定要等星星都生出來才能連 —— 這行原本排在 glows 之前，
+      // 於是每次都在對一個空陣列挑星，星座從來沒有真的出現過。
+      if (isDark) buildConstellations()
+    }
+
+    /** 星星淡入／淡出的時間。夠長才會像「浮現」而不是「開燈」 */
+    const STAR_FADE = 1600
+
+    /**
+     * 生一顆星。
+     *
+     * fresh 為真時從零開始淡入；建立整片星空時要傳 false，
+     * 讓每顆的壽命隨機錯開 —— 否則整片會一起亮、一起暗，
+     * 那是霓虹燈的行為，不是星空的。
+     */
+    function makeGlow(fresh: boolean): Glow {
+      const { x, y, w } = sampleStar()
+      const depth = Math.random()
+      const ttl = 16000 + Math.random() * 30000
+      return {
+        x,
+        y,
+        size: 6 + depth * 22,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.4 + Math.random() * 0.9,
+        alpha: (0.3 + depth * 0.7) * (0.45 + w * 0.55),
+        spike: depth > 0.86,
+        life: fresh ? 0 : Math.random() * ttl,
+        ttl,
+        locked: false,
+      }
     }
 
     /**
@@ -1197,53 +1249,107 @@ export function StarField({
      */
     function buildConstellations() {
       constellations = []
-      if (glows.length < 12) return
+      for (const g of glows) g.locked = false
+      const target = 3 + Math.floor(Math.random() * 2)
+      for (let i = 0; i < target; i++) makeConstellation()
+    }
+
+    /**
+     * 連出一個星座，成功的話推進 constellations 並鎖住用到的星。
+     *
+     * 起點挑得亮一些，接下來一路找「還沒被用掉、距離落在範圍內」的
+     * 最近鄰居。距離要設下限也要設上限 —— 太近的兩顆連起來看不出是
+     * 一條線，太遠的會橫跨半個畫面，那不像星座像蜘蛛網。
+     */
+    function makeConstellation(): boolean {
+      if (glows.length < 12) return false
 
       const used = new Set<number>()
-      const minD = Math.min(width, height) * 0.06
-      const maxD = Math.min(width, height) * 0.2
-      const count = 2 + Math.floor(Math.random() * 3)
+      for (const c of constellations) for (const i of c.path) used.add(i)
 
-      for (let c = 0; c < count; c++) {
-        // 起點挑亮一點的星，暗星連起來根本看不到
-        let seed = -1
-        for (let tries = 0; tries < 30; tries++) {
+      const minD = Math.min(width, height) * 0.05
+      const maxD = Math.min(width, height) * 0.19
+
+      // 起點挑亮一點、而且偏上方的星。
+      //
+      // 偏上方是因為天空只有上面那一段真的露出來 —— 底下被卡片蓋著。
+      // 在整張畫布上均勻挑的話，多數星座會連在使用者永遠看不到的
+      // 地方。這也剛好符合直覺：要看星星本來就是往上看。
+      //
+      // 門檻試不到就放寬。小畫面上亮星本來就少，硬卡著只會又變成
+      // 一個星座都連不出來
+      let seed = -1
+      for (const [bar, top] of [[0.5, 0.42], [0.3, 0.55], [0, 1]] as const) {
+        for (let tries = 0; tries < 40; tries++) {
           const i = Math.floor(Math.random() * glows.length)
-          if (!used.has(i) && glows[i].alpha > 0.45) {
+          if (!used.has(i) && glows[i].alpha > bar && glows[i].y < height * top) {
             seed = i
             break
           }
         }
-        if (seed < 0) continue
+        if (seed >= 0) break
+      }
+      if (seed < 0) return false
 
-        const path = [seed]
-        used.add(seed)
-        const links = 3 + Math.floor(Math.random() * 4)
+      const path = [seed]
+      used.add(seed)
+      const links = 3 + Math.floor(Math.random() * 4)
 
-        for (let k = 0; k < links; k++) {
-          const from = glows[path[path.length - 1]]
-          let best = -1
-          let bestD = Infinity
+      for (let k = 0; k < links; k++) {
+        const from = glows[path[path.length - 1]]
+        let best = -1
+        let bestD = Infinity
 
-          for (let i = 0; i < glows.length; i++) {
-            if (used.has(i)) continue
-            const d = Math.hypot(glows[i].x - from.x, glows[i].y - from.y)
-            if (d < minD || d > maxD) continue
-            if (d < bestD) {
-              bestD = d
-              best = i
-            }
+        for (let i = 0; i < glows.length; i++) {
+          if (used.has(i)) continue
+          const d = Math.hypot(glows[i].x - from.x, glows[i].y - from.y)
+          if (d < minD || d > maxD) continue
+          if (d < bestD) {
+            bestD = d
+            best = i
           }
-          if (best < 0) break
-          path.push(best)
-          used.add(best)
         }
+        if (best < 0) break
+        path.push(best)
+        used.add(best)
+      }
 
-        // 兩顆連不成星座
-        if (path.length >= 3) {
-          constellations.push({ path, phase: Math.random() * Math.PI * 2 })
+      // 兩顆連不成星座
+      if (path.length < 3) return false
+
+      for (const i of path) {
+        glows[i].locked = true
+        // 星座裡的星要保證看得到，不然連線兩端是空的
+        glows[i].alpha = Math.max(glows[i].alpha, 0.55)
+        glows[i].life = Math.max(glows[i].life, STAR_FADE)
+      }
+      constellations.push({
+        path,
+        phase: Math.random() * Math.PI * 2,
+        life: 0,
+        ttl: 40000 + Math.random() * 40000,
+      })
+      return true
+    }
+
+    /** 星座淡入／淡出的時間。比星星更慢，圖案要慢慢被認出來 */
+    const CONST_FADE = 3000
+
+    /** 讓星座老去：到期的收掉、放開它的星，再補上新的一組 */
+    function ageConstellations() {
+      if (reduced) return
+
+      for (let i = constellations.length - 1; i >= 0; i--) {
+        const c = constellations[i]
+        c.life += 16
+        if (c.life >= c.ttl) {
+          for (const idx of c.path) if (glows[idx]) glows[idx].locked = false
+          constellations.splice(i, 1)
         }
       }
+
+      // 補回來。一次只補一個，新舊交替才不會整片同時換掉
+      if (constellations.length < 2) makeConstellation()
     }
 
     function spawnShooting() {
@@ -1745,30 +1851,65 @@ export function StarField({
 
       const [driftX, driftY] = skyDrift(now)
 
+      if (isDark) ageConstellations()
+
       // 星座的連線先畫，才會在星星後面 —— 線壓在星點上會蓋掉光暈
       if (isDark && constellations.length > 0) {
-        ctx.lineWidth = 0.7
+        ctx.lineWidth = 1.2
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
         for (const c of constellations) {
           // 很慢地明滅。一直亮著會變成畫在天上的圖表，
           // 若隱若現才像是「剛好看出來的形狀」
-          const breathe = reduced ? 0.5 : 0.34 + 0.3 * Math.sin(now * 0.0004 + c.phase)
-          ctx.strokeStyle = `rgba(${starRGB}, ${0.16 * breathe * baseAlpha})`
+          const breathe = reduced ? 0.7 : 0.55 + 0.28 * Math.sin(now * 0.0004 + c.phase)
+          const born = Math.min(1, c.life / CONST_FADE)
+          const gone = Math.min(1, Math.max(0, (c.ttl - c.life) / CONST_FADE))
+          const a = 0.5 * breathe * Math.min(born, gone) * baseAlpha
+          if (a <= 0.01) continue
+
+          ctx.strokeStyle = `rgba(${starRGB}, ${a})`
           ctx.beginPath()
-          for (let i = 0; i < c.path.length; i++) {
-            const g = glows[c.path[i]]
+          // started 是必要的：原本只看 i === 0 決定 moveTo，
+          // 萬一第一顆星不在了，整條線會從上一個路徑的終點拉過來
+          let started = false
+          for (const idx of c.path) {
+            const g = glows[idx]
             if (!g) continue
-            if (i === 0) ctx.moveTo(g.x + driftX, g.y + driftY)
-            else ctx.lineTo(g.x + driftX, g.y + driftY)
+            if (!started) {
+              ctx.moveTo(g.x + driftX, g.y + driftY)
+              started = true
+            } else {
+              ctx.lineTo(g.x + driftX, g.y + driftY)
+            }
           }
           ctx.stroke()
         }
       }
 
-      for (const s of glows) {
+      for (let i = 0; i < glows.length; i++) {
+        const s = glows[i]
+
+        // 星空會慢慢重畫自己：到期的星熄掉，換一顆長在別處的新星。
+        // 位置固定不動的話，看久了會發現那只是一張貼圖 ——
+        // 汰換讓每次回到這頁看到的夜空都不一樣。
+        // 星座用到的星不動，不然連線會跟著跳
+        if (!reduced) {
+          s.life += 16
+          if (s.life >= s.ttl && !s.locked) {
+            glows[i] = makeGlow(true)
+            continue
+          }
+        }
+
+        // 淡入淡出。啪一聲出現的星星會被眼角捕捉到，很吵
+        const born = Math.min(1, s.life / STAR_FADE)
+        const gone = s.locked ? 1 : Math.min(1, Math.max(0, (s.ttl - s.life) / STAR_FADE))
+        const envelope = reduced ? 1 : Math.min(born, gone)
+
         const twinkle = reduced
           ? 1
           : 0.6 + 0.4 * Math.sin(now * 0.0011 * s.speed + s.phase)
-        const a = s.alpha * twinkle * baseAlpha
+        const a = s.alpha * twinkle * baseAlpha * envelope
         if (a <= 0.01) continue
 
         const gx = s.x + driftX
