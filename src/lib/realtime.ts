@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import type { AppNotification, Conversation, Message, Presence } from '../types'
+import { showNotification } from './notify'
 import { playMessage, playNotification } from './sound'
 import { useAuth } from '../store/auth'
 
@@ -74,6 +75,11 @@ export function useRealtime(): void {
               old ? [msg.data, ...old] : [msg.data],
             )
             playNotification()
+            showNotification(
+              `${msg.data.actor.displayName}`,
+              msg.data.preview || '有新的動態',
+              msg.data.href,
+            )
             break
 
           case 'message': {
@@ -82,6 +88,7 @@ export function useRealtime(): void {
               old ? [...old, m] : [m],
             )
             playMessage()
+            showNotification(m.sender.displayName, m.body, `/chat/${m.conversationId}`)
             // 對話列表的最後一則訊息與未讀數也要跟著動
             qc.setQueryData<Conversation[]>(['conversations'], (old) =>
               old

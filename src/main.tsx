@@ -3,6 +3,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
+import { OfflineNotice } from './components/OfflineNotice'
 import { StarField } from './components/StarField'
 import './index.css'
 
@@ -18,11 +20,16 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <StarField />
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
+    {/* 錯誤邊界放最外層 —— 任何元件渲染時丟例外，
+        預設行為是整棵樹被卸載，使用者只看到全白的畫面 */}
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <StarField />
+        <OfflineNotice />
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )

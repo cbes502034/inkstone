@@ -20,6 +20,7 @@ import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { auth, chat, notifications } from '../lib/api'
 import { useHeartbeat } from '../lib/presence'
 import { useRealtime } from '../lib/realtime'
+import { requestNotificationPermission } from '../lib/notify'
 import { isMuted, playNotification, setMuted } from '../lib/sound'
 import { useTheme } from '../lib/theme'
 import { useUnreadTitle } from '../lib/title'
@@ -107,8 +108,13 @@ export function AppShell() {
     const next = !muted
     setMuted(next)
     setMutedState(next)
-    // 開啟時試聽一次，順便讓瀏覽器授予音訊權限
-    if (!next) playNotification(true)
+    if (!next) {
+      // 開啟時試聽一次，順便讓瀏覽器授予音訊權限
+      playNotification(true)
+      // 這個動作代表使用者確實想收到提醒，是問系統通知權限最好的時機。
+      // 一進站就問，多數人會直接拒絕，而拒絕之後就再也問不到了。
+      void requestNotificationPermission()
+    }
   }
 
   // 聊天室內頁在手機上要全螢幕，藏起底部導覽避免擋到輸入框
