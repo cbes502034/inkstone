@@ -210,3 +210,74 @@ def _local_draft(prompt: str) -> AiResult:
         title=topic,
         draft_body=body,
     )
+
+
+# --- 診斷 ---------------------------------------------------------------
+#
+# 模型呼叫失敗時會退回本機樣板，而樣板產出的東西看起來也像一篇草稿，
+# 所以從畫面上完全分不出「AI 接上了」與「AI 掛了但有備援」。
+# 失敗原因原本只寫進日誌，看日誌需要進主機後台，查一次問題就要繞一大圈。
+# 這支把原因直接帶回來。
+
+
+async def probe() -> dict:
+    """
+    對 Hugging Face 打一次最小的請求，回報實際發生什麼事。
+
+    刻意不做完整生成：max_tokens 設 1，能問出「這組 token 和這個模型
+    到底通不通」，又幾乎不花額度。
+    """
+    model = settings.HF_TEXT_MODEL
+    if ":" not in model.rsplit("/", 1)[-1]:
+        model = f"{model}:cheapest"
+
+    result: dict = {
+        "tokenConfigured": bool(settings.HF_TOKEN),
+        "model": model,
+        "endpoint": HF_ENDPOINT,
+    }
+    if not settings.HF_TOKEN:
+        result["verdict"] = "沒有設定 HF_TOKEN，一律走本機樣板"
+        return result
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.HF_TIMEOUT_SECONDS) as client:
+            resp = await client.post(
+                HF_ENDPOINT,
+                headers={"Authorization": f"Bearer {settings.HF_TOKEN}"},
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 1,
+                },
+            )
+    except Exception as e:
+        result["verdict"] = "連線失敗"
+        result["detail"] = f"{type(e).__name__}: {e}"[:300]
+        return result
+
+    result["status"] = resp.status_code
+    if resp.status_code < 400:
+        result["verdict"] = "正常 —— AI 有接上"
+        return result
+
+    # 供應商回的錯誤訊息才是關鍵：光看狀態碼分不出
+    # 「token 權限不足」「額度用完」「這個模型沒人供應」，三者都是 4xx
+    result["detail"] = _redact(resp.text)[:400]
+    if resp.status_code in (401, 403):
+        result["verdict"] = (
+            "token 被拒。Inference Providers 需要 fine-grained token 並勾選 "
+            "「Make calls to Inference Providers」，單純的 Read token 不夠"
+        )
+    elif resp.status_code == 402:
+        result["verdict"] = "額度用完了"
+    elif resp.status_code == 404:
+        result["verdict"] = "找不到這個模型，或目前沒有供應商在跑它"
+    else:
+        result["verdict"] = "呼叫失敗，看 detail"
+    return result
+
+
+def _redact(text: str) -> str:
+    """萬一對方把送過去的 token 原樣回吐，不要讓它出現在回應裡。"""
+    return re.sub(r"hf_[A-Za-z0-9]{8,}", "hf_***", text)

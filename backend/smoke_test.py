@@ -411,6 +411,19 @@ def main() -> int:
 
     r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
     check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
+    print("\n— AI 診斷 —")
+    r = c.get("/ai/diagnostics")
+    check("診斷端點需要登入", r.status_code == 401, str(r.status_code))
+
+    r = c.get("/ai/diagnostics", headers=a_tok)
+    check("診斷端點可用", r.status_code == 200, r.text[:150])
+    diag = r.json() if r.status_code == 200 else {}
+    check("回報有沒有設 token", "tokenConfigured" in diag, str(diag)[:120])
+    check("回報用哪個模型", bool(diag.get("model")), str(diag)[:120])
+    check("回報結論", bool(diag.get("verdict")), str(diag)[:120])
+    # 金鑰絕對不能出現在回應裡
+    check("回應不含金鑰", "hf_" not in r.text.replace("hf_***", ""), r.text[:150])
+
     print("\n— 刪除自己的文章 —")
     r = c.post("/posts", headers=a_tok,
                json={"title": "等一下會被刪掉", "body": "內容 #會一起消失的標籤"})

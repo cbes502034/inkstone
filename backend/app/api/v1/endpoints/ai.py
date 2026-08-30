@@ -83,3 +83,17 @@ async def compose(payload: ComposeIn, me: CurrentUser) -> ComposeOut:
 async def end_session(session_id: str, me: CurrentUser) -> None:
     """使用者按下「就是這個」或關掉面板時呼叫，暫存立刻清掉。"""
     await store.delete(_session_key(me.id, session_id))
+
+
+@router.get("/diagnostics")
+async def diagnostics(me: CurrentUser) -> dict:
+    """
+    AI 到底有沒有接上。
+
+    需要登入才能呼叫 —— 它會真的往外打一次請求，開放給所有人等於
+    把別人的推論額度交出去。回傳內容經過遮蔽，不含任何金鑰。
+
+    存在的理由：呼叫失敗時會退回本機樣板，而樣板產出的東西看起來
+    也像一篇草稿，從畫面上分不出「接上了」跟「掛了但有備援」。
+    """
+    return await ai_service.probe()
