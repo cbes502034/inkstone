@@ -875,9 +875,9 @@ export function StarField({
         ctx.rotate(Math.atan2(dy, dx))
 
         const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size)
-        g.addColorStop(0, `rgba(255, 220, 128, ${a})`)
-        g.addColorStop(0.55, `rgba(255, 210, 108, ${a * 0.62})`)
-        g.addColorStop(1, 'rgba(255, 214, 126, 0)')
+        g.addColorStop(0, `rgba(255, 245, 194, ${a})`)
+        g.addColorStop(0.55, `rgba(255, 241, 182, ${a * 0.64})`)
+        g.addColorStop(1, 'rgba(255, 244, 196, 0)')
         ctx.fillStyle = g
 
         ctx.beginPath()
@@ -965,11 +965,13 @@ export function StarField({
         // 中途就淡光的話會變成「一小段光暈」而不是「射穿」
         // 沿長度持續淡化，不要整條同樣濃。
         // 光從太陽出發，越遠越散 —— 均勻的一整條會像實心的色帶
-        g.addColorStop(0, `rgba(255, 214, 104, ${a})`)
-        g.addColorStop(0.24, `rgba(255, 206, 92, ${a * 0.72})`)
-        g.addColorStop(0.55, `rgba(255, 204, 96, ${a * 0.4})`)
-        g.addColorStop(0.8, `rgba(255, 212, 118, ${a * 0.16})`)
-        g.addColorStop(1, 'rgba(255, 220, 142, 0)')
+        // 淡黃，不是金黃。彩度壓低之後在白底上會變弱，
+        // 所以靠透明度補回來 —— 淡而不透，才是「陽光」而不是「顏料」
+        g.addColorStop(0, `rgba(255, 243, 186, ${a})`)
+        g.addColorStop(0.24, `rgba(255, 240, 178, ${a * 0.74})`)
+        g.addColorStop(0.55, `rgba(255, 239, 180, ${a * 0.42})`)
+        g.addColorStop(0.8, `rgba(255, 243, 196, ${a * 0.17})`)
+        g.addColorStop(1, 'rgba(255, 246, 210, 0)')
         ctx.fillStyle = g
 
         // 從光暈的邊緣起算，不是從太陽的中心點。
