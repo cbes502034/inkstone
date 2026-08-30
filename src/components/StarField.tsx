@@ -897,40 +897,54 @@ export function StarField({
 
         // 快亮、慢滅
         const fade = t < 0.18 ? t / 0.18 : (1 - t) / 0.82
-        const a = 0.62 * fade
+        // 拿掉描邊之後，整團光的存在感全部落在這個填色上，
+        // 所以係數要補回來 —— 邊界靠漸層收，不靠線圈住
+        const a = 0.95 * fade
 
         ctx.save()
         ctx.translate(f.x, f.y)
+
+        // 先鋪一層光暈，範圍比多邊形大一圈。
+        //
+        // 沒有它的話，多邊形的邊就是這團光的盡頭，看起來像一塊被剪下來
+        // 貼上去的形狀。真實的光斑周圍一定有一圈散開的輝光 —— 那是
+        // 讓它「發光」而不是「有顏色」的東西。這層不轉角度：光暈是圓的，
+        // 有稜角的只有裡面那個像。
+        const halo = ctx.createRadialGradient(0, 0, f.size * 0.5, 0, 0, f.size * 1.85)
+        halo.addColorStop(0, `rgba(255, 250, 214, ${a * 0.3})`)
+        halo.addColorStop(0.45, `rgba(255, 246, 198, ${a * 0.14})`)
+        halo.addColorStop(1, 'rgba(255, 244, 190, 0)')
+        ctx.fillStyle = halo
+        ctx.beginPath()
+        ctx.arc(0, 0, f.size * 1.85, 0, Math.PI * 2)
+        ctx.fill()
+
         ctx.rotate(f.turn)
 
         ctx.beginPath()
         polygon(f.size, f.sides)
 
-        // 內裡是淡黃的半透明，邊緣化開。
-        // 實心的話會變成一塊貼在畫面上的色紙，而光斑是透光的
+        // 從中心往外擴散：白 → 淡黃 → 化開。
+        //
+        // 亮度最高的一點在正中央，這是光斑的本質 —— 它是光源在鏡片
+        // 之間反射出來的像，中心是那道光本身，所以是白的；往外才被
+        // 鏡片的色散染成黃。反過來（中心淡、邊緣濃）會變成一個環，
+        // 那是另一種東西了。
+        //
+        // 整體透明度壓得很低。它要是朦朧的一團，不是貼在畫面上的
+        // 色紙 —— 有形狀就夠了，不必有份量。
         const g = ctx.createRadialGradient(0, 0, 0, 0, 0, f.size)
-        g.addColorStop(0, `rgba(255, 246, 198, ${a * 0.34})`)
-        g.addColorStop(0.58, `rgba(255, 242, 182, ${a * 0.5})`)
-        g.addColorStop(0.9, `rgba(255, 238, 168, ${a * 0.72})`)
-        g.addColorStop(1, `rgba(255, 236, 160, ${a * 0.4})`)
+        g.addColorStop(0, `rgba(255, 255, 255, ${a * 0.7})`)
+        g.addColorStop(0.28, `rgba(255, 253, 232, ${a * 0.56})`)
+        g.addColorStop(0.66, `rgba(255, 247, 200, ${a * 0.36})`)
+        g.addColorStop(0.9, `rgba(255, 243, 184, ${a * 0.16})`)
+        g.addColorStop(1, 'rgba(255, 240, 176, 0)')
         ctx.fillStyle = g
         ctx.fill()
 
-        // 輪廓。這是光斑看不看得見的關鍵 ——
-        // 在白色的卡片上，淡黃的填色跟白底幾乎是同一個顏色，
-        // 唯一能被眼睛抓到的是那一圈邊。所以邊要用彩度高一點的琥珀色，
-        // 靠色相而不是亮度被看見；線細，壓在文字上也讀得到。
-        ctx.strokeStyle = `rgba(228, 176, 64, ${a * 0.85})`
-        ctx.lineWidth = 2
-        ctx.lineJoin = 'round'
-        ctx.stroke()
-
-        // 內圈。真實的光斑是光圈葉片的重像，邊界不只一層
-        ctx.beginPath()
-        polygon(f.size * 0.66, f.sides)
-        ctx.strokeStyle = `rgba(233, 190, 92, ${a * 0.45})`
-        ctx.lineWidth = 1.2
-        ctx.stroke()
+        // 不描邊。一畫上去，這團光就被關進一個框裡 ——
+        // 眼睛會先看到那條線，然後才看到光，於是它變成「一個圖形」
+        // 而不是「一團光」。形狀交給漸層自己收掉就好。
 
         ctx.restore()
         return true
