@@ -9,7 +9,7 @@ from app.core.security import (
     TokenError,
     create_access_token,
     create_refresh_token,
-    decode_token,
+    decode_token_full,
     hash_password,
     needs_rehash,
     verify_password,
@@ -19,6 +19,7 @@ from app.schemas.user import (
     AuthSession,
     ForgotPasswordIn,
     LoginIn,
+    LogoutIn,
     RefreshIn,
     RegisterCheckOut,
     RegisterCompleteIn,
@@ -32,6 +33,7 @@ from app.schemas.user import (
 from app.services.avatar import store_avatar
 from app.services.email import send_password_reset, send_verification
 from app.services.presence import last_seen_of, presence_of
+from app.services.revocation import is_revoked, revoke
 from app.services.verification import (
     build_link,
     build_reset_link,
@@ -243,13 +245,25 @@ async def login(payload: LoginIn, db: DbSession) -> AuthSession:
 @router.post("/refresh", response_model=TokenPair)
 async def refresh(payload: RefreshIn, db: DbSession) -> TokenPair:
     try:
-        user_id = decode_token(payload.refreshToken, expect="refresh")
+        data = decode_token_full(payload.refreshToken, expect="refresh")
     except TokenError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
 
-    user = await db.get(User, user_id)
+    # 這裡一定要查撤銷名單。少了這道檢查，登出等於沒用 ——
+    # 拿著 refresh token 的人立刻就能換一張新的 access token 回來。
+    jti = data.get("jti")
+    if jti and await is_revoked(jti):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "請重新登入")
+
+    user = await db.get(User, str(data["sub"]))
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "帳號不存在或已停用")
+
+    # 這裡刻意不做 refresh token 輪替。
+    # 輪替真正的價值在「重放偵測」（發現舊 token 又被用 → 連坐廢掉整條家族），
+    # 那套沒做的話，換來的只有壞處：使用者開兩個分頁時，access 一過期
+    # 兩邊會同時拿同一張 refresh 來換，先到的成功、後到的被判失效，
+    # 那個分頁就無端被踢回登入頁。
 
     return TokenPair(
         accessToken=create_access_token(user.id),
@@ -364,11 +378,32 @@ async def _load_reset(db, token: str) -> tuple[PasswordReset, User]:
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(_: CurrentUser) -> None:
+async def logout(_: CurrentUser, payload: LogoutIn | None = None) -> None:
     """
-    目前 JWT 是無狀態的，登出由前端丟掉 token 完成。
+    登出並作廢 token。
 
-    待辦：要做到「登出後 token 立刻失效」需要一份撤銷名單（Redis 存 jti），
-    等 Redis 接上後補。
+    只靠前端丟掉 token 是不夠的 —— JWT 簽出去之後只要沒過期就一直有效，
+    被側錄或留在別台裝置上的那一份仍然可用。所以把它記進撤銷名單。
+
+    access 與 refresh 兩張都要作廢。只廢 access 的話，
+    拿著 refresh token 的人立刻就能換一張新的回來。
     """
+    if payload is None:
+        return None
+
+    for token, kind in (
+        (payload.accessToken, "access"),
+        (payload.refreshToken, "refresh"),
+    ):
+        if not token:
+            continue
+        try:
+            data = decode_token_full(token, expect=kind)  # type: ignore[arg-type]
+        except TokenError:
+            continue  # 已經無效的 token 不用再撤銷
+        jti = data.get("jti")
+        exp = data.get("exp")
+        if jti and exp:
+            await revoke(jti, datetime.fromtimestamp(exp, tz=timezone.utc))
+
     return None

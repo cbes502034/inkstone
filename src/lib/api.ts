@@ -79,9 +79,15 @@ export const auth = {
     return http.post<void>('/auth/password/reset', input)
   },
 
-  /** POST /auth/logout */
-  logout(): Promise<void> {
-    return http.post<void>('/auth/logout')
+  /**
+   * POST /auth/logout
+   *
+   * 兩張 token 都要送 —— 後端會把它們加進撤銷名單。
+   * 只丟掉前端的副本不夠：JWT 簽出去之後只要沒過期就一直有效，
+   * 被側錄或留在別台裝置的那一份仍然可用。
+   */
+  logout(tokens: { accessToken: string | null; refreshToken: string | null }): Promise<void> {
+    return http.post<void>('/auth/logout', tokens)
   },
 
   /** GET /users/me —— 只有本人拿得到 email 等私密欄位 */

@@ -1,3 +1,4 @@
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -40,6 +41,10 @@ def _create_token(subject: str, token_type: TokenType, expires: timedelta) -> st
         "type": token_type,
         "iat": now,
         "exp": now + expires,
+        # 每張 token 的唯一識別碼。登出時把它記進撤銷名單，
+        # 沒有這個欄位就只能撤銷「某使用者的全部 token」，
+        # 那會把他其他裝置也一起登出。
+        "jti": secrets.token_urlsafe(16),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
@@ -58,9 +63,9 @@ class TokenError(Exception):
     pass
 
 
-def decode_token(token: str, expect: TokenType) -> str:
+def decode_token_full(token: str, expect: TokenType) -> dict:
     """
-    驗證並取出 user id。
+    驗證並回傳完整內容。
 
     一定要檢查 type：access 與 refresh 的有效期差很多，
     若不分辨，別人就能拿長效的 refresh token 當 access token 用一個月。
@@ -75,7 +80,11 @@ def decode_token(token: str, expect: TokenType) -> str:
     if payload.get("type") != expect:
         raise TokenError("token 類型不符")
 
-    sub = payload.get("sub")
-    if not sub:
+    if not payload.get("sub"):
         raise TokenError("token 缺少 subject")
-    return str(sub)
+    return payload
+
+
+def decode_token(token: str, expect: TokenType) -> str:
+    """只要 user id 的簡便版本。"""
+    return str(decode_token_full(token, expect)["sub"])

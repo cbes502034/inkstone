@@ -406,6 +406,32 @@ def main() -> int:
 
     r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
     check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
+    print("\n— 登出與 token 撤銷 —")
+    # 專門開一個帳號來測，不然後面的測試會因為 token 失效而全掛
+    victim = register(c, tag, "logout", "登出測試")
+    v_tok = {"Authorization": f"Bearer {victim['accessToken']}"}
+
+    r = c.get("/users/me", headers=v_tok)
+    check("登出前 token 可用", r.status_code == 200, str(r.status_code))
+
+    r = c.post("/auth/logout", headers=v_tok, json={
+        "accessToken": victim["accessToken"],
+        "refreshToken": victim["refreshToken"],
+    })
+    check("登出", r.status_code == 204, r.text[:150])
+
+    # 這是重點：JWT 還沒過期，但已經被列入撤銷名單
+    r = c.get("/users/me", headers=v_tok)
+    check("登出後同一張 token 立即失效", r.status_code == 401, str(r.status_code))
+
+    # 只廢 access 不夠 —— 拿著 refresh 的人立刻能換一張新的回來
+    r = c.post("/auth/refresh", json={"refreshToken": victim["refreshToken"]})
+    check("登出後 refresh token 也不能換新的", r.status_code == 401,
+          str(r.status_code))
+
+    # 其他人的 token 不受影響
+    r = c.get("/users/me", headers=a_tok)
+    check("別人的 token 不受影響", r.status_code == 200, str(r.status_code))
     print("\n— 錯誤格式 —")
     r = c.get("/posts/does-not-exist", headers=a_tok)
     check("404 統一格式", r.status_code == 404 and "error" in r.json(), r.text[:150])

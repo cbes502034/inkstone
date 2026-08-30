@@ -5,9 +5,10 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import TokenError, decode_token
+from app.core.security import TokenError, decode_token, decode_token_full
 from app.db.session import get_db
 from app.models import User
+from app.services.revocation import is_revoked
 
 # auto_error=False：沒帶 token 時我們自己回傳訊息，而不是 FastAPI 的預設英文
 _bearer = HTTPBearer(auto_error=False)
@@ -33,13 +34,24 @@ async def get_current_user(
         )
 
     try:
-        user_id = decode_token(creds.credentials, expect="access")
+        payload = decode_token_full(creds.credentials, expect="access")
     except TokenError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         ) from e
+
+    # 登出過的 token 即使還沒過期也不能用
+    jti = payload.get("jti")
+    if jti and await is_revoked(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="請重新登入",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = str(payload["sub"])
 
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
@@ -59,9 +71,13 @@ async def get_optional_user(
     if creds is None:
         return None
     try:
-        user_id = decode_token(creds.credentials, expect="access")
+        payload = decode_token_full(creds.credentials, expect="access")
     except TokenError:
         return None
+    jti = payload.get("jti")
+    if jti and await is_revoked(jti):
+        return None
+    user_id = str(payload["sub"])
     user = await db.get(User, user_id)
     return user if user and user.is_active else None
 

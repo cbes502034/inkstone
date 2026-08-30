@@ -108,6 +108,13 @@ class RefreshIn(BaseModel):
     refreshToken: str
 
 
+class LogoutIn(BaseModel):
+    """兩張都要送 —— 只廢 access 的話，拿著 refresh 的人立刻能換一張新的。"""
+
+    accessToken: str | None = None
+    refreshToken: str | None = None
+
+
 class ForgotPasswordIn(BaseModel):
     email: EmailStr
 

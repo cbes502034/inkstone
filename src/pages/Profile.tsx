@@ -12,7 +12,7 @@ import { absoluteDate } from '../lib/time'
 import { useAuth } from '../store/auth'
 
 export function Profile() {
-  const { user, patchUser, signOut } = useAuth()
+  const { user, patchUser, signOut, accessToken, refreshToken } = useAuth()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -227,7 +227,10 @@ export function Profile() {
             </Link>
             <Button
               variant="ghost"
-              onClick={() => {
+              onClick={async () => {
+                // 先通知後端作廢，再清掉本機。順序反過來的話就拿不到 token 了。
+                // 網路失敗也要繼續登出 —— 使用者的預期是「按了就登出」。
+                await auth.logout({ accessToken, refreshToken }).catch(() => {})
                 signOut()
                 navigate('/login')
               }}
