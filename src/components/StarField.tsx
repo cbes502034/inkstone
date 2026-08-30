@@ -721,10 +721,16 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
       // 陽光：右上角一團暖光。位置固定，像一個確定的光源
       const [sx, sy] = sunPos()
-      const sun = ctx.createRadialGradient(
-        sx, sy, 0,
-        sx, sy, Math.max(width, height) * 0.6,
-      )
+
+      // 本體的半徑跟月亮用同一條公式 —— 日月是同一片天空的兩個時刻，
+      // 大小理當一致。先前太陽只靠一條從中心急速衰減的漸層，
+      // 亮區不到四十像素，比月亮小得多，所以顯得淡。
+      const bodyR = Math.max(46, Math.min(84, width * 0.075))
+      const reach = Math.max(width, height) * 0.6
+      const body = (bodyR * 0.78) / reach
+      const rim = bodyR / reach
+
+      const sun = ctx.createRadialGradient(sx, sy, 0, sx, sy, reach)
       // 本體要有一小塊接近純白的核 —— 那是「這裡有一顆太陽」的訊號。
       // 只有一團漸層的話，雲一飄過來就把它整個蓋掉了
       // 不要硬核。先前給了一個 0.98 透明度的近白核心，
@@ -734,11 +740,14 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       // 真實的太陽在照片裡是「一團越往外越淡的光」，中心與周圍
       // 之間沒有明確的界線。從中心就開始化開，才會被當成光源
       // 而不是物件。
-      sun.addColorStop(0, 'rgba(255, 250, 216, 0.7)')
-      sun.addColorStop(0.05, 'rgba(255, 243, 186, 0.5)')
-      sun.addColorStop(0.14, 'rgba(255, 234, 156, 0.28)')
-      sun.addColorStop(0.34, 'rgba(255, 230, 158, 0.13)')
-      sun.addColorStop(0.62, 'rgba(255, 232, 172, 0.05)')
+      // 本體有一段大致均勻的亮區，才會被讀成一個有大小的光源；
+      // 但中心與周圍之間仍然沒有硬邊 —— 那是「貼上去的球」的來源。
+      // 之後接一片拉得很遠的暖暈，太陽的存在感有一半來自那片光。
+      sun.addColorStop(0, 'rgba(255, 251, 224, 0.78)')
+      sun.addColorStop(body, 'rgba(255, 244, 190, 0.62)')
+      sun.addColorStop(rim, 'rgba(255, 234, 152, 0.36)')
+      sun.addColorStop(rim + (1 - rim) * 0.12, 'rgba(255, 230, 148, 0.2)')
+      sun.addColorStop(rim + (1 - rim) * 0.4, 'rgba(255, 230, 158, 0.08)')
       sun.addColorStop(1, 'rgba(255, 236, 186, 0)')
       ctx.fillStyle = sun
       ctx.fillRect(0, 0, width, height)
