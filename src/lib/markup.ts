@@ -113,52 +113,60 @@ export function toPlainText(source: string): string {
  * 動態牆的卡片要的是「跟寫出來一樣的樣子」，粗體要粗、標籤要是標籤，
  * 用純文字版本的話使用者會覺得排版在列表裡被吃掉了。
  */
-export function excerptTokens(source: string, max = 120): Token[] {
-  // 先把每一行串成一串，行與行之間補一個空格，換行才不會把兩句黏在一起
-  const flat: Token[] = []
-  for (const line of tokenize(source)) {
-    if (line.length === 0) continue
-    if (flat.length > 0) flat.push({ type: 'text', value: ' ' })
-    flat.push(...line)
-  }
-
-  const out: Token[] = []
+export function excerptTokens(source: string, max = 120): Token[][] {
+  const out: Token[][] = []
   let used = 0
 
-  for (const token of flat) {
-    // 連續空白壓成一個，摘要裡不需要保留原始排版
-    const value = token.type === 'text' ? token.value.replace(/\s+/g, ' ') : token.value
-    if (!value) continue
-    if (out.length === 0 && !value.trim()) continue // 開頭不要留空白
+  for (const line of tokenize(source)) {
+    // 空行只是段落間隔。摘要最多三行，再插一個空行進去等於少掉三分之一，
+    // 所以段落之間只換行、不留空行
+    if (line.length === 0 || (line.length === 1 && !line[0].value.trim())) continue
 
-    const room = max - used
-    if (room <= 0) return finish(out, true)
+    const kept: Token[] = []
+    for (const token of line) {
+      // 壓掉行內的連續空白，但不動換行 —— 換行由「分行」本身保留
+      const value = token.type === 'text' ? token.value.replace(/[^\S\n]+/g, ' ') : token.value
+      if (!value) continue
+      if (kept.length === 0 && !value.trim()) continue // 每行開頭不留空白
 
-    if (value.length <= room) {
-      out.push({ ...token, value })
-      used += value.length
-      continue
+      const room = max - used
+      if (room <= 0) {
+        if (kept.length) out.push(kept)
+        return finish(out, true)
+      }
+
+      if (value.length <= room) {
+        kept.push({ ...token, value })
+        used += value.length
+        continue
+      }
+
+      // 放不下了。標籤不切一半 —— 半個標籤看起來像壞掉，不像被截斷
+      if (token.type !== 'tag') kept.push({ ...token, value: value.slice(0, room) })
+      if (kept.length) out.push(kept)
+      return finish(out, true)
     }
 
-    // 放不下了。標籤不切一半 —— 半個標籤看起來像壞掉，不像被截斷
-    if (token.type === 'tag') return finish(out, true)
-    out.push({ ...token, value: value.slice(0, room) })
-    return finish(out, true)
+    if (kept.length) out.push(kept)
   }
 
   return finish(out, false)
 }
 
 /** 收尾：去掉結尾空白，被截斷的話補上刪節號（刪節號本身不套用任何樣式） */
-function finish(tokens: Token[], truncated: boolean): Token[] {
-  const out = [...tokens]
+function finish(lines: Token[][], truncated: boolean): Token[][] {
+  const out = lines.map((l) => [...l])
   const last = out[out.length - 1]
-  if (last && last.type === 'text') {
-    const trimmed = last.value.trimEnd()
-    if (trimmed) out[out.length - 1] = { ...last, value: trimmed }
-    else out.pop()
+  if (last) {
+    const tail = last[last.length - 1]
+    if (tail && tail.type === 'text') {
+      const trimmed = tail.value.trimEnd()
+      if (trimmed) last[last.length - 1] = { ...tail, value: trimmed }
+      else last.pop()
+    }
+    if (truncated) last.push({ type: 'text', value: '…' })
+    if (last.length === 0) out.pop()
   }
-  if (truncated) out.push({ type: 'text', value: '…' })
   return out
 }
 

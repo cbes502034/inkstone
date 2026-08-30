@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { excerptTokens, tokenize, type Token } from '../lib/markup'
 
@@ -94,5 +95,18 @@ export function PostExcerpt({
   className?: string
 }) {
   const renderTokens = useRenderTokens()
-  return <p className={className}>{renderTokens(excerptTokens(source, max), 'x')}</p>
+  const lines = excerptTokens(source, max)
+
+  // 用 <br> 分行而不是每行一個 <p>：卡片靠 line-clamp 限制在三行，
+  // 那個機制要求內容在同一個區塊裡，拆成多個段落就夾不住了。
+  return (
+    <p className={className}>
+      {lines.map((tokens, i) => (
+        <Fragment key={i}>
+          {i > 0 && <br />}
+          {renderTokens(tokens, String(i))}
+        </Fragment>
+      ))}
+    </p>
+  )
 }
