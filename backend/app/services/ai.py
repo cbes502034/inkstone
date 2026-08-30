@@ -310,3 +310,15 @@ def _now() -> str:
 def _record_failure(reason: str, detail: str, model: str) -> None:
     global _last_failure
     _last_failure = {"at": _now(), "reason": reason, "detail": detail, "model": model}
+
+
+def last_failure_code() -> str | None:
+    """
+    最後一次模型呼叫失敗的代碼，給公開的健康檢查用。
+
+    刻意只回代碼不回訊息：401（token 被拒）、402（額度用完）、
+    404（沒有供應商）、ReadTimeout 各自指向完全不同的原因，
+    光一個代碼就足以判斷方向；供應商的錯誤全文則屬於營運細節，
+    不該掛在不需要登入的端點上。
+    """
+    return _last_failure["reason"] if _last_failure else None

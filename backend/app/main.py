@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.services import ai as ai_service
 from app.db.base import Base
 from app.db.session import engine
 
@@ -143,6 +144,11 @@ async def health() -> dict:
         "database": "postgres" if not settings.is_sqlite else "sqlite",
         "redis": bool(settings.REDIS_URL),
         "ai": "huggingface" if settings.HF_TOKEN else "local",
+        # 模型呼叫最近一次失敗的「代碼」—— 狀態碼或例外類別名，不含訊息內文。
+        # 只有代碼是刻意的：401/402/404/逾時各自對應完全不同的原因，
+        # 光這一個字就足以判斷方向，而把供應商的錯誤全文公開出來
+        # 等於把營運細節掛在網路上。要看完整訊息請打 /ai/diagnostics（需登入）。
+        "aiLastError": ai_service.last_failure_code(),
     }
 
 
