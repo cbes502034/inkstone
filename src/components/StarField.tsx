@@ -73,6 +73,21 @@ interface Butterfly {
    * 兩邊等大只會出現在正上方俯視，也就是標本的視角。
    */
   lean: number
+  /**
+   * 繞圈。
+   *
+   * 蝴蝶不會像紙飛機那樣沿一條線滑過去 —— 牠們一路盤旋、打轉、
+   * 忽然折返。這裡在原本的漂移路徑上疊一個圓周運動：
+   *
+   *   loops       整趟繞幾圈。0 就是幾乎直線飄過
+   *   loopRadius  圈子多大
+   *   loopPhase   起始角度，讓每隻的圈不會同步
+   *   loopDir     順時針或逆時針
+   */
+  loops: number
+  loopRadius: number
+  loopPhase: number
+  loopDir: number
   /** 用哪一張翅膀貼圖（決定顏色） */
   sprite: number
   /** 軌跡的色相，跟翅膀同色才像是同一隻留下的 */
@@ -888,6 +903,12 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         delay,
         // 有些偏左、有些偏右，也有少數幾乎正對著看
         lean: (Math.random() * 2 - 1) * 0.55,
+        // 大約三分之一幾乎直線飄過，其餘會繞一到三圈。
+        // 全部都繞會很鬧，全部都直又太機械
+        loops: Math.random() < 0.34 ? 0 : 1 + Math.floor(Math.random() * 3),
+        loopRadius: 26 + Math.random() * 52,
+        loopPhase: Math.random() * Math.PI * 2,
+        loopDir: Math.random() < 0.5 ? -1 : 1,
         sprite: pick,
         hue: wingHues[pick],
         trail: [],
@@ -897,6 +918,25 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       // 側飛把水平方向壓掉一半，所以整體要放大才維持得住存在感
       b.scale = 0.5 + depth * 0.6
       b.speed = (0.000075 + (1 - depth) * 0.00009)
+    }
+
+    /**
+     * 某隻蝴蝶在進度 t 的位置。
+     *
+     * 由兩件事疊起來：一條橫越畫面的漂移路徑（貝茲），
+     * 加上一個繞著它轉的圓周。圓的半徑兩端收成零 ——
+     * 所以牠是從畫面外直直飄進來、中途才開始盤旋、離開前又收直，
+     * 而不是一進場就在原地打轉。
+     */
+    function posAt(b: Butterfly, t: number): [number, number] {
+      const [bx, by] = bezier(b.p, t)
+      if (b.loops === 0) return [bx, by]
+
+      // 半徑的包絡線：中段最大、兩端為零
+      const envelope = Math.sin(Math.PI * Math.min(1, Math.max(0, t)))
+      const r = b.loopRadius * envelope
+      const a = b.loopPhase + b.loopDir * t * b.loops * Math.PI * 2
+      return [bx + Math.cos(a) * r, by + Math.sin(a) * r * 0.7]
     }
 
     /** 貝茲取點 */
@@ -962,11 +1002,12 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         b.t += b.speed * 16
         if (b.t >= 1) return false
 
-        const [bx, by] = bezier(b.p, b.t)
+        const [bx, by] = posAt(b, b.t)
 
         // 顫動加在垂直於行進方向上，加在 y 軸的話往下飛時會看起來像抖動
         b.bob += b.bobSpeed * 16
-        const [ax, ay] = bezier(b.p, Math.min(1, b.t + 0.01))
+        // 前瞻點也要走同一條合成路徑，否則繞圈時機身會朝著錯的方向
+        const [ax, ay] = posAt(b, Math.min(1, b.t + 0.01))
         const dx = ax - bx
         const dy = ay - by
         const len = Math.hypot(dx, dy) || 1
