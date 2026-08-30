@@ -25,3 +25,9 @@ httpx==0.28.1                     # 呼叫 Hugging Face 推論服務
 # --- 圖片處理 ---
 pillow==11.1.0                    # 頭像後端二次驗證與壓縮
 websockets==14.1                  # WebSocket 測試用
+
+# --- 推播通知 ---
+# 瀏覽器整個關掉時仍然送得到通知。pywebpush 會帶進 py-vapid、
+# http-ece 與 cryptography —— Web Push 規格要求對內容做端對端加密，
+# 那三個分別負責簽章、加密與底層演算法。
+pywebpush==2.5.0

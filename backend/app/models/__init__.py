@@ -16,6 +16,7 @@ from app.models.chat import (
 )
 from app.models.media import MediaObject
 from app.models.pending import PasswordReset, PendingRegistration
+from app.models.push import AppSecret, PushSubscription
 from app.models.post import Post, PostLike, PostTag
 from app.models.social import (
     Block,
@@ -30,6 +31,8 @@ from app.models.user import User
 __all__ = [
     "User",
     "MediaObject",
+    "PushSubscription",
+    "AppSecret",
     "PendingRegistration",
     "PasswordReset",
     "Post",

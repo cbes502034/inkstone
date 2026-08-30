@@ -421,6 +421,41 @@ def main() -> int:
 
     r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
     check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
+    print("\n— 推播訂閱 —")
+    r = c.get("/push/key")
+    check("公鑰不需要登入就拿得到", r.status_code == 200, str(r.status_code))
+    pubkey = r.json().get("publicKey", "") if r.status_code == 200 else ""
+    # VAPID 公鑰是未壓縮的 P-256 座標點：65 bytes，base64url 之後 87 個字
+    check("公鑰格式正確", len(pubkey) == 87, f"長度 {len(pubkey)}")
+
+    r2 = c.get("/push/key")
+    check("公鑰跨請求固定", r2.json().get("publicKey") == pubkey,
+          "換過金鑰的話既有訂閱會全部失效")
+
+    fake = {
+        "endpoint": f"https://fcm.googleapis.com/fcm/send/{tag}-device-1",
+        "p256dh": "BExampleKeyForTestingPurposesOnlyNotARealKey",
+        "auth": "ExampleAuthSecret",
+    }
+    r = c.post("/push/subscribe", json=fake)
+    check("訂閱需要登入", r.status_code == 401, str(r.status_code))
+
+    r = c.post("/push/subscribe", headers=a_tok, json=fake)
+    check("訂閱成功", r.status_code == 204, r.text[:150])
+
+    r = c.post("/push/subscribe", headers=a_tok, json=fake)
+    check("重複訂閱同一裝置不會出錯", r.status_code == 204, r.text[:150])
+
+    # 換人登入同一台裝置，訂閱要跟著換人，否則通知會送錯對象
+    r = c.post("/push/subscribe", headers=b_tok, json=fake)
+    check("換人登入同裝置可覆蓋", r.status_code == 204, r.text[:150])
+
+    r = c.post("/push/unsubscribe", headers=a_tok, json=fake)
+    check("退訂不能刪掉別人的", r.status_code == 204, r.text[:150])
+    r = c.post("/push/unsubscribe", headers=b_tok, json=fake)
+    check("擁有者可以退訂", r.status_code == 204, r.text[:150])
+
+
     print("\n— AI 診斷 —")
     r = c.get("/ai/diagnostics")
     check("診斷端點需要登入", r.status_code == 401, str(r.status_code))

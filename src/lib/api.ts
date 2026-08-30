@@ -364,3 +364,33 @@ export const ai = {
     return http.del<void>(`/ai/sessions/${sessionId}`)
   },
 }
+
+/* ------------------------------------------------------------------ 推播 */
+
+interface PushSubscriptionPayload {
+  endpoint: string
+  p256dh: string
+  auth: string
+}
+
+export const push = {
+  /** GET /push/key —— 訂閱要用的 VAPID 公鑰 */
+  key(): Promise<{ publicKey: string }> {
+    return http.get<{ publicKey: string }>('/push/key')
+  },
+
+  /** POST /push/subscribe */
+  subscribe(sub: PushSubscriptionPayload): Promise<void> {
+    return http.post<void>('/push/subscribe', sub)
+  },
+
+  /**
+   * POST /push/unsubscribe
+   *
+   * 不是 DELETE —— 要帶 endpoint 進來（一段很長的網址），
+   * 而 DELETE 的請求主體在部分代理與客戶端會被剝掉。
+   */
+  unsubscribe(sub: PushSubscriptionPayload): Promise<void> {
+    return http.post<void>('/push/unsubscribe', sub)
+  },
+}

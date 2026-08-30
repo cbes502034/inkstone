@@ -21,6 +21,7 @@ import { auth, chat, notifications } from '../lib/api'
 import { useHeartbeat } from '../lib/presence'
 import { useRealtime } from '../lib/realtime'
 import { requestNotificationPermission } from '../lib/notify'
+import { subscribePush, unsubscribePush } from '../lib/push'
 import { isMuted, playNotification, setMuted } from '../lib/sound'
 import { useTheme } from '../lib/theme'
 import { useUnreadTitle } from '../lib/title'
@@ -113,7 +114,17 @@ export function AppShell() {
       playNotification(true)
       // 這個動作代表使用者確實想收到提醒，是問系統通知權限最好的時機。
       // 一進站就問，多數人會直接拒絕，而拒絕之後就再也問不到了。
-      void requestNotificationPermission()
+      //
+      // 拿到權限就順手訂閱推播。使用者按的是同一顆「開啟通知」，
+      // 不該再多一個「順便也開啟推播嗎」的選項去煩他 ——
+      // 兩者對他而言是同一件事：我想收到通知。
+      void requestNotificationPermission().then((granted) => {
+        if (granted) void subscribePush()
+      })
+    } else {
+      // 關掉聲音就一併退訂。留著的話瀏覽器關閉時仍會跳系統通知，
+      // 使用者會覺得「我明明關掉了」
+      void unsubscribePush()
     }
   }
 

@@ -69,8 +69,9 @@ class Settings(BaseSettings):
     # 短 TTL 的傳統理由是「token 發出去就收不回來」，那個前提在這裡不成立。
     #
     # refresh 一個月換來的是使用者不必反覆登入。代價是被偷走的那張
-    # 可以用滿一個月：我們沒有做輪替加重放偵測（多分頁會互相踢掉），
-    # 也還沒做「改密碼就讓所有既有 session 失效」。後者是目前最該補的一項。
+    # 可以用滿一個月 —— 我們沒有做輪替加重放偵測（那會讓多分頁互相踢掉）。
+    # 補償的是「改密碼讓所有既有 session 失效」：帳號被盜時改密碼
+    # 真的能把對方趕出去，不必等 token 自然過期。
     ACCESS_TOKEN_TTL_MINUTES: int = 60
     REFRESH_TOKEN_TTL_DAYS: int = 30
 
@@ -82,6 +83,14 @@ class Settings(BaseSettings):
     # 沒設定就退回程序內記憶體，本機開發不必先開 Upstash 帳號。
     REDIS_URL: str | None = None
     AI_SESSION_TTL_SECONDS: int = 60 * 60  # 一小時沒動作就清掉
+
+    # --- 推播通知（選填）---
+    # 不設定的話程式會自己產生一組並存進資料庫，不需要任何手動步驟。
+    # 想自己掌管金鑰的人才需要填這兩個。
+    VAPID_PUBLIC_KEY: str | None = None
+    VAPID_PRIVATE_KEY: str | None = None
+    # 推播服務要求能聯絡到服務擁有者，出問題時才有辦法通知
+    VAPID_SUBJECT: str = "mailto:noreply@inkstone.app"
 
     # --- 物件儲存（選填）---
     # 沒設定就把圖片位元組留在資料庫，功能完全一樣，只是佔用資料庫容量。
@@ -214,10 +223,18 @@ class Settings(BaseSettings):
         url = self.database_url
         return "pooler.supabase.com" in url or ":6543" in url
 
-    @field_validator("SUPABASE_URL", "SUPABASE_SERVICE_KEY", mode="before")
+    @field_validator(
+        "SUPABASE_URL", "SUPABASE_SERVICE_KEY", "VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY",
+        mode="before",
+    )
     @classmethod
-    def _trim_storage(cls, v):
-        """同樣去掉貼上時夾帶的空白。網址結尾的斜線也一併去掉，避免組出雙斜線。"""
+    def _trim_pasted(cls, v):
+        """
+        去掉貼上時夾帶的空白與換行。
+
+        網址結尾的斜線也一併去掉，避免組出 https://host//storage 這種雙斜線。
+        金鑰用的是 base64url，不含斜線，所以這個處理對它們無害。
+        """
         if isinstance(v, str):
             v = v.strip().rstrip("/")
             return v or None
