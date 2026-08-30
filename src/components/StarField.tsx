@@ -727,15 +727,19 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       )
       // 本體要有一小塊接近純白的核 —— 那是「這裡有一顆太陽」的訊號。
       // 只有一團漸層的話，雲一飄過來就把它整個蓋掉了
-      // 要看得出是黃的。純白的核在藍天上只會像一塊反光，
-      // 而太陽在人的印象裡就是黃色的 —— 核心留一點白提亮，
-      // 但緊接著就要進到明確的金黃
-      sun.addColorStop(0, 'rgba(255, 252, 224, 0.98)')
-      sun.addColorStop(0.04, 'rgba(255, 240, 160, 0.94)')
-      sun.addColorStop(0.1, 'rgba(255, 224, 120, 0.6)')
-      sun.addColorStop(0.24, 'rgba(255, 220, 130, 0.32)')
-      sun.addColorStop(0.55, 'rgba(255, 226, 160, 0.12)')
-      sun.addColorStop(1, 'rgba(255, 232, 180, 0)')
+      // 不要硬核。先前給了一個 0.98 透明度的近白核心，
+      // 結果讀起來像一顆貼上去的球，而不是陽光 —— 那個突兀感
+      // 就是從這裡來的。
+      //
+      // 真實的太陽在照片裡是「一團越往外越淡的光」，中心與周圍
+      // 之間沒有明確的界線。從中心就開始化開，才會被當成光源
+      // 而不是物件。
+      sun.addColorStop(0, 'rgba(255, 250, 216, 0.7)')
+      sun.addColorStop(0.05, 'rgba(255, 243, 186, 0.5)')
+      sun.addColorStop(0.14, 'rgba(255, 234, 156, 0.28)')
+      sun.addColorStop(0.34, 'rgba(255, 230, 158, 0.13)')
+      sun.addColorStop(0.62, 'rgba(255, 232, 172, 0.05)')
+      sun.addColorStop(1, 'rgba(255, 236, 186, 0)')
       ctx.fillStyle = sun
       ctx.fillRect(0, 0, width, height)
     }
@@ -824,7 +828,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         const y = sy + dy * k
         // 每顆各自緩慢地明滅，不會整串同步
         const shimmer = 0.7 + 0.3 * Math.sin(now * 0.0016 + k * 9)
-        const a = 0.3 * fade * w * shimmer
+        const a = 0.1 * fade * w * shimmer
         if (a < 0.004) continue
 
         ctx.save()
@@ -905,18 +909,23 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         // 可讀性算過：白卡片（#fff）疊上這個淡黃之後底色約是
         // (255, 246, 221)，而文字是接近黑的深藍 —— 對比幾乎不變。
         // 會擋住字的是「深色或高彩度的實心塊」，不是淺色的光。
-        const a = 0.95 * fade * r.weight * shimmer
+        // 放到卡片之上以後，同樣的亮度會顯得強得多 —— 先前它被
+        // 卡片擋掉了大半。這裡砍到三分之一，讓它回到「一道光經過」
+        // 而不是「畫面被打上一盞燈」
+        const a = 0.19 * fade * r.weight * shimmer
 
         const g = ctx.createLinearGradient(sx, sy,
           sx + Math.cos(r.angle) * r.length,
           sy + Math.sin(r.angle) * r.length)
         // 前面九成幾乎不衰減，最後才收掉。
         // 中途就淡光的話會變成「一小段光暈」而不是「射穿」
-        g.addColorStop(0, `rgba(255, 236, 150, ${a})`)
-        g.addColorStop(0.32, `rgba(255, 228, 128, ${a * 0.97})`)
-        g.addColorStop(0.66, `rgba(255, 222, 116, ${a * 0.9})`)
-        g.addColorStop(0.9, `rgba(255, 226, 130, ${a * 0.58})`)
-        g.addColorStop(1, 'rgba(255, 244, 192, 0)')
+        // 沿長度持續淡化，不要整條同樣濃。
+        // 光從太陽出發，越遠越散 —— 均勻的一整條會像實心的色帶
+        g.addColorStop(0, `rgba(255, 238, 158, ${a})`)
+        g.addColorStop(0.22, `rgba(255, 232, 140, ${a * 0.78})`)
+        g.addColorStop(0.5, `rgba(255, 226, 124, ${a * 0.48})`)
+        g.addColorStop(0.76, `rgba(255, 230, 140, ${a * 0.22})`)
+        g.addColorStop(1, 'rgba(255, 238, 164, 0)')
         ctx.fillStyle = g
 
         // 一道楔形：從太陽的一個點往外張開
@@ -1482,8 +1491,14 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
       ctx.clearRect(0, 0, width, height)
 
-      // 前景層只有蝴蝶。星塵與星光鋪在文字上面會直接毀掉可讀性
+      // 前景層：蝴蝶與光線。星塵與星光不畫在這裡 ——
+      // 那些鋪在文字上面會直接毀掉可讀性。
+      //
+      // 光線放在前景是刻意的：陽光是從觀看者這一側照過來的，
+      // 它本來就該落在卡片「上面」而不是被卡片擋住。
+      // 因為用疊加模式畫，落在字上也不會把字壓暗。
       if (front) {
+        if (!isDark) drawRays(now)
         drawButterflies(now)
         ctx.globalCompositeOperation = 'source-over'
         if (running) raf = requestAnimationFrame(draw)
@@ -1495,7 +1510,6 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       if (!isDark) {
         ctx.globalCompositeOperation = 'source-over'
         drawDaySky()
-        drawRays(now)
         drawClouds()
         drawButterflies(now)
         if (running) raf = requestAnimationFrame(draw)
