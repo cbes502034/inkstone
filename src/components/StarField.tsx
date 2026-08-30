@@ -72,14 +72,17 @@ interface Butterfly {
 const WING_HUES = [188, 205, 232, 265, 292, 320, 38]
 
 /**
- * 畫面上同時存在的蝴蝶數。
+ * 畫面上同時存在的蝴蝶數 —— 後面那一層。
  *
- * 有下限是關鍵 —— 先前是「一群飛完就全部消失，安靜十幾秒再來一群」，
- * 中間那段空白讓整件事變成一段一段的。維持下限之後才有源源不絕的感覺，
- * 而上限與偶爾的加碼保留了密度的起伏，不會變成均勻的背景動畫。
+ * 下限就是上限，所以永遠恰好一隻在後面、一隻在前面，合計兩隻。
+ * 有下限是關鍵：先前是「一群飛完就全部消失，安靜十幾秒再來一群」，
+ * 中間那段空白讓整件事變成一段一段的。維持下限才有源源不絕的感覺。
+ *
+ * 數量刻意壓得很低。這是背景，不是主角 —— 兩隻安靜地飛過，
+ * 比一群熱鬧地飛過更接近「夢境」，而且完全不干擾閱讀。
  */
-const MIN_BUTTERFLIES = 4
-const MAX_BUTTERFLIES = 9
+const MIN_BUTTERFLIES = 1
+const MAX_BUTTERFLIES = 1
 
 function makeWingSprite(hue: number, dark: boolean): HTMLCanvasElement {
   const w = 104
@@ -178,7 +181,20 @@ function makeGlowSprite(rgb: string): HTMLCanvasElement {
   return c
 }
 
-export function StarField() {
+/**
+ * layer 決定這一份要畫什麼、畫在哪一層。
+ *
+ *   'sky'        星空 ＋ 主群蝴蝶，鋪在所有內容後面
+ *   'butterflies' 只有蝴蝶，浮在卡片前面
+ *
+ * 之所以要兩層：畫布在內容後面時，卡片的半透明深色底會把背後的東西
+ * 幾乎吃光 —— 手機上卡片佔滿寬度，蝴蝶等於看不見。但整群移到前面又會
+ * 橫過文字，高對比的線條切過中文筆畫會直接吃掉可讀性。
+ *
+ * 所以主群留在後面，前面只放很少、很淡、較小的幾隻，像隔著玻璃看到的。
+ * 附帶的好處是一前一後產生景深，比單層更有空間感。
+ */
+export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const { isDark } = useTheme()
 
@@ -194,6 +210,18 @@ export function StarField() {
     const ctx: CanvasRenderingContext2D = context
 
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const front = layer === 'butterflies'
+
+    // 前景下限是 0、上限是 1 —— 所以它時有時無。
+    // 後面那一層永遠保留一隻，畫面因此不會完全空掉，
+    // 而總數在一到兩隻之間自然起伏，不是固定的兩隻在跑。
+    //
+    // 前景那隻小一號、亮度砍到四成：它的工作是製造景深，不是搶戲。
+    // 數量一多就會變成擋在字前面的雜訊。
+    const minCount = front ? 0 : MIN_BUTTERFLIES
+    const maxCount = front ? 1 : MAX_BUTTERFLIES
+    const layerAlpha = front ? 0.4 : 1
+    const layerScale = front ? 0.62 : 1
 
     const starRGB = isDark ? '232, 240, 255' : '110, 128, 180'
     const baseAlpha = isDark ? 1 : 0.32
@@ -400,11 +428,11 @@ export function StarField() {
       // 結果是一段一段的，中間整片空白。改成隨時補足下限，
       // 密度仍然有起伏（偶爾一陣比較多），但不會歸零。
       const alive = butterflies.length
-      if (alive < MIN_BUTTERFLIES) {
+      if (alive < minCount) {
         // 缺幾隻補幾隻，錯開零點幾秒進場，不要整排同時冒出來
-        const need = MIN_BUTTERFLIES - alive
+        const need = minCount - alive
         for (let i = 0; i < need; i++) spawnButterfly(i * (400 + Math.random() * 900))
-      } else if (alive < MAX_BUTTERFLIES && now >= nextButterflyAt) {
+      } else if (alive < maxCount && now >= nextButterflyAt) {
         // 額外的一陣：在下限之上偶爾多放幾隻，密度才有呼吸感
         const extra = 1 + Math.floor(Math.random() * 3)
         for (let i = 0; i < extra; i++) spawnButterfly(i * (300 + Math.random() * 700))
@@ -434,8 +462,10 @@ export function StarField() {
 
         // 進出畫面時淡入淡出，不要憑空出現又憑空消失
         const fade = Math.min(1, Math.min(b.t, 1 - b.t) / 0.12)
-        const dim = readingDim(x)
-        const alpha = fade * dim
+        // 前景不再額外壓暗中央 —— 它本來就整層都很淡，
+        // 再壓一次會變回看不見，那就失去分層的意義
+        const dim = front ? 1 : readingDim(x)
+        const alpha = fade * dim * layerAlpha
 
         b.trail.push({ x, y })
         // 蝴蝶每幀只移動一到兩個像素，26 個點的軌跡總長不到 50px ——
@@ -499,8 +529,8 @@ export function StarField() {
         const angle = Math.atan2(ay - by, ax - bx)
 
         const wing = wings[b.sprite]
-        const sw = wing.width * b.scale
-        const sh = wing.height * b.scale
+        const sw = wing.width * b.scale * layerScale
+        const sh = wing.height * b.scale * layerScale
 
         ctx.save()
         ctx.translate(x, y)
@@ -563,6 +593,14 @@ export function StarField() {
 
       ctx.clearRect(0, 0, width, height)
       ctx.globalCompositeOperation = 'lighter'
+
+      // 前景層只有蝴蝶。星塵與星光鋪在文字上面會直接毀掉可讀性
+      if (front) {
+        drawButterflies(now)
+        ctx.globalCompositeOperation = 'source-over'
+        if (running) raf = requestAnimationFrame(draw)
+        return
+      }
 
       // 星塵極緩慢地飄，接縫處再貼一張，看不出重複
       if (dust) {
@@ -668,13 +706,16 @@ export function StarField() {
       window.removeEventListener('resize', onResize)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [isDark])
+  }, [isDark, layer])
 
   return (
     <canvas
       ref={canvasRef}
       aria-hidden
-      className="pointer-events-none fixed inset-0 -z-10 h-full w-full"
+      className={`pointer-events-none fixed inset-0 h-full w-full ${
+        // z-[5] 在內容之上、對話框（z-50）之下 —— 蝴蝶不該蓋住確認刪除的視窗
+        layer === 'butterflies' ? 'z-[5]' : '-z-10'
+      }`}
     />
   )
 }
