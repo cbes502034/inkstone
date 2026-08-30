@@ -35,6 +35,23 @@ interface Shooting {
   ttl: number
 }
 
+interface Ray {
+  /** 光束中心在畫面上的水平位置，會隨時間往右移 */
+  x: number
+  width: number
+  life: number
+  ttl: number
+}
+
+interface Cloud {
+  x: number
+  y: number
+  /** 一朵雲由幾團圓弧堆成，每團各自的位移與半徑 */
+  puffs: Array<{ dx: number; dy: number; r: number }>
+  speed: number
+  alpha: number
+}
+
 interface Butterfly {
   /** 滑行路徑用三次貝茲，兩個控制點決定那條弧線有多「飄」 */
   p: [number, number, number, number, number, number, number, number]
@@ -49,6 +66,13 @@ interface Butterfly {
   bobAmp: number
   /** 同一批出生的錯開一點，不要整群疊在一起 */
   delay: number
+  /**
+   * 側身的方向與程度。
+   *
+   * 從側面看蝴蝶時，近的那片翅膀看起來比遠的那片大 ——
+   * 兩邊等大只會出現在正上方俯視，也就是標本的視角。
+   */
+  lean: number
   /** 用哪一張翅膀貼圖（決定顏色） */
   sprite: number
   /** 軌跡的色相，跟翅膀同色才像是同一隻留下的 */
@@ -72,6 +96,74 @@ interface Butterfly {
 const WING_HUES = [188, 205, 232, 265, 292, 320, 38]
 
 /**
+ * 白天的蝴蝶品種。
+ *
+ * 真實的蝴蝶不是一片單色，是分區的配色 —— 翅根往往是深的（黑、褐），
+ * 中段才是那個讓人記住的顏色，外緣多半又壓回深色，再點上白斑。
+ * 所以這裡每一種都給三個顏色而不是一個色相：
+ *
+ *   root  翅根，靠近身體。多半是黑或深褐
+ *   mid   主色。這是這隻蝴蝶「是什麼顏色」的答案
+ *   edge  外緣暗帶。幾乎每種蝴蝶都有，少了它會像色紙剪的
+ *   spot  斑點的顏色，通常是白或淡黃
+ *
+ * 紋樣有三種，可以疊加：
+ *   stripes  條紋，順著翅脈的方向
+ *   spots    斑點，沿翅緣排
+ *   waves    波紋，橫過翅面的波狀帶。蛺蝶科很多都有這種紋
+ *
+ * 品種取材自真實的蝶類。全部自己編的話很容易滑向「彩虹配色」，
+ * 而自然界的配色之所以好看，是因為它們有限制。
+ */
+const DAY_SPECIES = [
+  {
+    // 帝王蝶：墨黑翅根、烈橙翅面、黑緣白斑
+    root: '#1c1917', mid: '#f97316', edge: '#0c0a09', spot: '#ffffff',
+    spots: true, stripes: true, waves: false, tail: false,
+  },
+  {
+    // 白紋鳳蝶：近黑的底，一道白帶橫過。對比最強的一隻。有尾
+    root: '#0c0a09', mid: '#ffffff', edge: '#0c0a09', spot: '#ffffff',
+    spots: true, stripes: true, waves: false, tail: true,
+  },
+  {
+    // 藍閃蝶：墨黑翅根，翅面是幾乎發光的金屬藍
+    root: '#0f172a', mid: '#38bdf8', edge: '#020617', spot: '#f0f9ff',
+    spots: false, stripes: false, waves: true, tail: false,
+  },
+  {
+    // 紅粉蝶：深褐轉粉，翅緣壓到近黑
+    root: '#451a03', mid: '#fda4af', edge: '#1c1917', spot: '#fff1f2',
+    spots: true, stripes: false, waves: true, tail: false,
+  },
+  {
+    // 白蛺蝶：純黑白。沒有任何彩度，反而最搶眼
+    root: '#0c0a09', mid: '#fafaf9', edge: '#0c0a09', spot: '#ffffff',
+    spots: true, stripes: false, waves: true, tail: false,
+  },
+  {
+    // 咖啡蛺蝶：深咖啡底配奶油色，翅緣近黑
+    root: '#2c1810', mid: '#e7c9a0', edge: '#1c1917', spot: '#fffbeb',
+    spots: true, stripes: false, waves: true, tail: false,
+  },
+  {
+    // 紫斑蝶：墨黑底透出亮紫，白斑排在外緣。有尾
+    root: '#1e1b4b', mid: '#a78bfa', edge: '#0c0a09', spot: '#ffffff',
+    spots: true, stripes: false, waves: true, tail: true,
+  },
+  {
+    // 青斑蝶：黑底配淡青，白斑。有尾
+    root: '#042f2e', mid: '#99f6e4', edge: '#0c0a09', spot: '#ffffff',
+    spots: true, stripes: true, waves: false, tail: true,
+  },
+  {
+    // 黃粉蝶：亮黃配黑緣。整組裡最輕的一隻，全部都深會變得沉重
+    root: '#a16207', mid: '#fde047', edge: '#1c1917', spot: '#ffffff',
+    spots: false, stripes: false, waves: true, tail: false,
+  },
+]
+
+/**
  * 畫面上同時存在的蝴蝶數 —— 後面那一層。
  *
  * 下限就是上限，所以永遠恰好一隻在後面、一隻在前面，合計兩隻。
@@ -84,7 +176,95 @@ const WING_HUES = [188, 205, 232, 265, 292, 320, 38]
 const MIN_BUTTERFLIES = 1
 const MAX_BUTTERFLIES = 1
 
-function makeWingSprite(hue: number, dark: boolean): HTMLCanvasElement {
+/**
+ * 身體 —— 頭、胸、腹，加上兩根觸角。
+ *
+ * 先前完全沒畫身體，只有兩片翅膀左右對稱地拍動。那是這隻蝴蝶
+ * 一直不像蝴蝶的最大原因：真實的蝴蝶中間有一條明確的軸，
+ * 翅膀是「長在身體上」而不是憑空對稱的兩片。
+ *
+ * 身體單獨一張貼圖，因為它不能跟翅膀一起被翻轉 ——
+ * 翅膀左右鏡射，身體只有一個，畫在正中央。
+ *
+ * 方向：頭朝上、腹朝下。翅膀往左右張開，所以身體的軸是垂直的。
+ */
+function makeBodySprite(dark: boolean, color: string): HTMLCanvasElement {
+  // 身體要明顯小於翅展。先前跟翅膀差不多高，看起來變成
+  // 「大身體配小翅膀」，比例整個反過來
+  const w = 18
+  const h = 64
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const g = c.getContext('2d')!
+  g.translate(w / 2, h / 2)
+
+  if (dark) {
+    g.shadowColor = 'rgba(190, 210, 255, 0.9)'
+    g.shadowBlur = 6
+  }
+
+  // --- 觸角 ---
+  // 從頭部往前上方分開，末端帶一個小球。那個小球是蝴蝶跟蛾
+  // 最容易分辨的地方，少了它會偏向蛾
+  g.strokeStyle = color
+  g.lineWidth = dark ? 1.2 : 1.4
+  g.lineCap = 'round'
+  for (const dir of [-1, 1]) {
+    g.beginPath()
+    g.moveTo(dir * 0.9, -14)
+    g.quadraticCurveTo(dir * 5, -22, dir * 6, -29)
+    g.stroke()
+    g.beginPath()
+    g.arc(dir * 6, -30, 1.4, 0, Math.PI * 2)
+    g.fillStyle = color
+    g.fill()
+  }
+
+  // --- 頭 ---
+  g.beginPath()
+  g.arc(0, -13, 2.6, 0, Math.PI * 2)
+  g.fillStyle = color
+  g.fill()
+
+  // --- 胸 ---
+  // 比腹部粗，翅膀就是長在這一段上
+  g.beginPath()
+  g.ellipse(0, -5, 3.3, 7, 0, 0, Math.PI * 2)
+  g.fill()
+
+  // --- 腹 ---
+  // 往下漸細。分節用幾道橫線暗示，不必真的畫出每一節
+  g.beginPath()
+  g.moveTo(-2.8, -1)
+  g.quadraticCurveTo(-2.4, 15, 0, 23)
+  g.quadraticCurveTo(2.4, 15, 2.8, -1)
+  g.closePath()
+  g.fill()
+
+  if (!dark) {
+    // 白天才畫分節。夜裡是發光的線稿，多加細節只會糊成一團
+    g.strokeStyle = 'rgba(255, 255, 255, 0.22)'
+    g.lineWidth = 0.9
+    for (let i = 0; i < 5; i++) {
+      const y = 1.5 + i * 4
+      const half = 2.6 - i * 0.4
+      g.beginPath()
+      g.moveTo(-half, y)
+      g.lineTo(half, y)
+      g.stroke()
+    }
+  }
+
+  return c
+}
+
+function makeWingSprite(
+  hue: number,
+  dark: boolean,
+  species = 0,
+  tail = false,
+): HTMLCanvasElement {
   const w = 104
   const h = 104
   const c = document.createElement('canvas')
@@ -99,41 +279,83 @@ function makeWingSprite(hue: number, dark: boolean): HTMLCanvasElement {
     ? `hsla(${hue}, 100%, 68%, 0.95)`
     : `hsla(${hue}, 70%, 60%, 0.35)`
 
-  /** 前翅：大、往上外側張開，尖端明確。蝴蝶的辨識度幾乎全在這一片 */
+  /**
+   * 前翅：大面積的圓弧，往上外側整片張開。
+   *
+   * 蝴蝶的辨識度幾乎全在這一片，而關鍵是「寬」——
+   * 先前畫成一道細長的弧，結果看起來像葉子或鳥的翅膀。
+   * 真正的蝴蝶前翅是一大片：前緣往外上方拉開、翅端圓鈍、
+   * 外緣再整片繞回身體。中間包住的面積比輪廓本身重要得多。
+   */
+  function forewingPath() {
+    g.moveTo(0, -5)
+    // 前緣：從肩部往外上方拉開，弧度要飽滿
+    g.bezierCurveTo(-10, -34, -34, -54, -60, -50)
+    // 翅端：圓鈍，不是尖角
+    g.bezierCurveTo(-80, -47, -92, -30, -86, -14)
+    // 外緣與後緣：整片繞回身體
+    g.bezierCurveTo(-78, -2, -40, 4, 0, 0)
+    g.closePath()
+  }
+
+  /**
+   * 後翅：比前翅小一號、更圓，往下外側墜。
+   *
+   * tail 決定要不要那個水滴狀的尾突。不是每種蝴蝶都有 ——
+   * 鳳蝶有、粉蝶沒有。全部都加上去就變成同一款了。
+   */
+  function hindwingPath() {
+    g.moveTo(0, 2)
+    g.bezierCurveTo(-14, 12, -38, 18, -50, 32)
+    if (tail) {
+      // 尾突：像一滴水掛在翅緣下方
+      g.bezierCurveTo(-56, 40, -54, 49, -47, 53)
+      g.bezierCurveTo(-43, 47, -42, 40, -40, 36)
+    } else {
+      // 沒有尾突就是一道飽滿的圓弧收回來
+      g.bezierCurveTo(-56, 41, -46, 46, -36, 38)
+    }
+    g.bezierCurveTo(-24, 28, -10, 14, 0, 4)
+    g.closePath()
+  }
+
   function forewing() {
     g.beginPath()
-    g.moveTo(0, -3)
-    // 前緣：從肩部快速往左上拉到翅尖
-    g.bezierCurveTo(-18, -30, -52, -44, -80, -38)
-    // 翅尖轉折 —— 這個角是「蝴蝶」跟「花瓣」的差別
-    g.lineTo(-88, -20)
-    // 外緣與後緣：帶一點內凹再收回身體
-    g.bezierCurveTo(-72, -12, -46, -6, -26, -2)
-    g.lineTo(0, -1)
-    g.stroke()
+    forewingPath()
   }
 
-  /** 後翅：小、圓、往下墜，尾端帶一個短尾突 */
   function hindwing() {
     g.beginPath()
-    g.moveTo(0, 1)
-    g.bezierCurveTo(-20, 6, -44, 14, -54, 28)
-    // 尾突：小小一個角，古典鳳蝶的特徵
-    g.lineTo(-46, 38)
-    g.bezierCurveTo(-34, 30, -16, 16, 0, 4)
-    g.stroke()
+    hindwingPath()
   }
 
-  /** 翅脈：三筆就好。太多會糊成一團亮塊，失去線稿感 */
+  /**
+   * 翅脈：從翅根放射出去。
+   *
+   * 這是真實蝴蝶最結構性的特徵 —— 看虎斑蝶或帝王蝶就知道，
+   * 粗黑的脈從身體那端扇形散開，橫過整片橙色翅面。
+   * 先前畫成幾乎看不見的細線，等於把蝴蝶最像蝴蝶的地方拿掉了。
+   *
+   * 前翅六條、後翅四條，都從靠近身體的同一小塊區域出發。
+   */
   function veins() {
     g.beginPath()
-    g.moveTo(-4, -3)
-    g.lineTo(-70, -32)
-    g.moveTo(-4, -2)
-    g.lineTo(-74, -22)
-    g.moveTo(-3, 2)
-    g.lineTo(-48, 28)
-    g.stroke()
+    // 前翅：扇形散開到翅端與外緣
+    const fore: Array<[number, number]> = [
+      [-62, -46], [-76, -36], [-84, -25], [-84, -14], [-72, -6], [-52, -2],
+    ]
+    for (const [ex, ey] of fore) {
+      g.moveTo(-4, -3)
+      g.lineTo(ex, ey)
+    }
+    // 後翅：往下外側散開
+    const hind: Array<[number, number]> = [
+      [-48, 30], [-38, 36], [-26, 30], [-14, 18],
+    ]
+    for (const [ex, ey] of hind) {
+      g.moveTo(-3, 3)
+      g.lineTo(ex, ey)
+    }
   }
 
   const pass = (color: string, blur: number, lw: number, withVeins: boolean) => {
@@ -144,8 +366,13 @@ function makeWingSprite(hue: number, dark: boolean): HTMLCanvasElement {
     g.lineJoin = 'round'
     g.lineCap = 'round'
     forewing()
+    g.stroke()
     hindwing()
-    if (withVeins) veins()
+    g.stroke()
+    if (withVeins) {
+      veins()
+      g.stroke()
+    }
   }
 
   if (dark) {
@@ -156,10 +383,138 @@ function makeWingSprite(hue: number, dark: boolean): HTMLCanvasElement {
     pass(`hsla(${hue}, 98%, 70%, 0.9)`, 8, 2.6, true)
     pass('rgba(232, 244, 255, 0.95)', 3, 1.6, true)
   } else {
-    // 日：白底上不能靠發光 —— 疊加模式在白色上只會得到白色。
-    // 改成實色細線加一點柔影，像淡彩鋼筆畫過的線稿。
-    pass(`hsla(${hue}, 62%, 62%, 0.30)`, 6, 4, false)
-    pass(`hsla(${hue}, 72%, 46%, 0.85)`, 0, 1.5, true)
+    // 日：實體的蝴蝶，不是發光的線稿。
+    //
+    // 霓虹是夜晚的語彙 —— 那種東西在陽光下根本不會被看見。
+    // 白天的蝴蝶是有重量的：翅膀分區上色、外緣壓深、底下有一點柔影
+    // 表示它離背景有距離。
+    const sp = DAY_SPECIES[species % DAY_SPECIES.length]
+
+    // 底色：翅根 → 主色 → 外緣。三段而不是兩段，
+    // 因為真實蝴蝶的顏色是分區的，不是從一色平順地過渡到另一色
+    const grad = g.createLinearGradient(0, 0, -90, -12)
+    grad.addColorStop(0, sp.root)
+    grad.addColorStop(0.42, sp.mid)
+    grad.addColorStop(0.86, sp.mid)
+    grad.addColorStop(1, sp.edge)
+
+    g.shadowColor = 'rgba(40, 30, 20, 0.3)'
+    g.shadowBlur = 7
+    g.shadowOffsetY = 2
+    g.fillStyle = grad
+    forewing()
+    g.fill()
+    hindwing()
+    g.fill()
+
+    // 影子只加一次，紋樣不需要再帶一層
+    g.shadowColor = 'transparent'
+    g.shadowBlur = 0
+    g.shadowOffsetY = 0
+
+    // 紋樣要裁進翅膀裡，否則會畫到輪廓外面變成一團髒東西
+    g.save()
+    g.beginPath()
+    forewingPath()
+    hindwingPath()
+    g.clip()
+
+    // 外緣暗帶。用「粗線描邊 ＋ 裁切」做出來 ——
+    // 只有落在翅膀內側的那一半會留下，剛好就是沿著翅緣的一圈。
+    // 幾乎每種蝴蝶都有這道深邊，少了它會像色紙剪出來的
+    g.strokeStyle = sp.edge
+    g.globalAlpha = 0.75
+    g.lineWidth = 16
+    forewing()
+    g.stroke()
+    hindwing()
+    g.stroke()
+    g.globalAlpha = 1
+
+    if (sp.stripes) {
+      // 條紋順著翅脈的方向，垂直於前緣。橫著畫會像百葉窗
+      g.strokeStyle = sp.edge
+      g.globalAlpha = 0.55
+      g.lineWidth = 3.4
+      g.lineCap = 'round'
+      for (let i = 0; i < 7; i++) {
+        const t = -14 - i * 12
+        g.beginPath()
+        g.moveTo(t, -52)
+        g.lineTo(t - 18, 50)
+        g.stroke()
+      }
+      g.globalAlpha = 1
+    }
+
+    if (sp.waves) {
+      // 波紋：橫過翅面的波狀帶，順著翅緣的弧度走。
+      // 跟條紋的差別在方向 —— 條紋是從翅根往外放射，
+      // 波紋是繞著翅膀的弧一圈一圈往外推，像水面的漣漪。
+      g.strokeStyle = sp.edge
+      g.lineWidth = 2.6
+      g.lineCap = 'round'
+      for (let band = 0; band < 3; band++) {
+        const spread = 0.62 + band * 0.16
+        g.globalAlpha = 0.5 - band * 0.1
+        g.beginPath()
+        for (let i = 0; i <= 26; i++) {
+          const t = i / 26
+          // 沿著一條從翅端掃到後翅的弧，加上小幅的正弦擾動變成波
+          const ang = -1.25 + t * 2.4
+          const wob = Math.sin(t * Math.PI * 5) * 4.5
+          const r = (58 + wob) * spread
+          const x = -Math.cos(ang) * r - 18
+          const y = Math.sin(ang) * r * 0.82
+          if (i === 0) g.moveTo(x, y)
+          else g.lineTo(x, y)
+        }
+        g.stroke()
+      }
+      g.globalAlpha = 1
+    }
+
+    if (sp.spots) {
+      // 斑點沿翅緣排，越靠翅端越小 —— 真實的蝴蝶多半是這樣
+      g.fillStyle = sp.spot
+      const spots: Array<[number, number, number]> = [
+        [-74, -34, 4.4], [-60, -40, 3.8], [-46, -36, 3.1],
+        [-82, -22, 3.6], [-70, -12, 3], [-46, 30, 3.4], [-32, 24, 2.7],
+      ]
+      for (const [sx, sy, r] of spots) {
+        g.beginPath()
+        g.arc(sx, sy, r, 0, Math.PI * 2)
+        g.fill()
+      }
+    }
+
+    g.restore()
+
+    // 翅緣線：把形狀的邊界收乾淨
+    g.strokeStyle = sp.edge
+    g.lineWidth = 1.3
+    g.lineJoin = 'round'
+    forewing()
+    g.stroke()
+    hindwing()
+    g.stroke()
+
+    // 翅脈：粗、深、明顯。這是白天的蝴蝶最像蝴蝶的地方 ——
+    // 參考照片裡的虎斑蝶，黑脈橫過整片橙色翅面，比任何斑點都醒目。
+    // 裁進翅膀裡畫，脈不該長到輪廓外面
+    g.save()
+    g.beginPath()
+    forewingPath()
+    hindwingPath()
+    g.clip()
+    g.strokeStyle = sp.edge
+    g.globalAlpha = 0.8
+    g.lineWidth = 2.8
+    g.lineCap = 'round'
+    veins()
+    g.stroke()
+    g.globalAlpha = 1
+    g.restore()
   }
 
   return c
@@ -220,7 +575,13 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     // 數量一多就會變成擋在字前面的雜訊。
     const minCount = front ? 0 : MIN_BUTTERFLIES
     const maxCount = front ? 1 : MAX_BUTTERFLIES
-    const layerAlpha = front ? 0.4 : 1
+    // 白天的翅膀是填色的實心形狀，同樣的透明度會比夜裡的線稿
+    // 擋掉多得多的字 —— 一隻線稿蝴蝶只遮住幾條線的位置，
+    // 一隻填色蝴蝶會蓋掉整片。所以白天的前景要再壓一半，
+    // 尺寸也再縮一號，讓它停留在「餘光看得到」而不是「擋在眼前」。
+    const layerAlpha = front ? (isDark ? 0.4 : 0.32) : 1
+    // 白天的前層不再縮那麼小。太小的填色蝴蝶會變成一個看不出是什麼的
+    // 色塊 —— 紋樣完全看不見，反而更像髒污
     const layerScale = front ? 0.62 : 1
 
     const starRGB = isDark ? '232, 240, 255' : '110, 128, 180'
@@ -239,9 +600,153 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
     // 蝴蝶：白色線稿本體 ＋ 紫色滑行軌跡。
     // 只在深色主題出現 —— 霓虹描邊放在淺色底上會變成髒髒的灰線。
-    // 每個色相各烘一張。七張貼圖總共不到 300KB 記憶體，
-    // 換來的是每隻蝴蝶都能有自己的顏色而不必逐幀重畫
-    const wings = WING_HUES.map((h) => makeWingSprite(h, isDark))
+    // 夜裡每個色相各烘一張；白天每個品種各烘一張。
+    // 十來張貼圖總共不到 500KB 記憶體，換來的是每隻蝴蝶都有自己的
+    // 顏色與紋樣，而且不必逐幀重畫
+    // 夜裡也要有無尾與有尾的差別，否則七隻飛過去都是同一個剪影
+    const wings = isDark
+      ? WING_HUES.map((h, i) => makeWingSprite(h, true, i, i % 3 === 0))
+      : DAY_SPECIES.map((sp, i) => makeWingSprite(0, false, i, sp.tail))
+    // 軌跡的色相。白天用主色 —— 那是這隻蝴蝶最被記住的顏色
+    const wingHues = isDark ? WING_HUES : DAY_SPECIES.map(() => 210)
+
+    // 身體：夜裡是發亮的淡藍，白天用該品種的外緣色 —— 那多半是
+    // 黑或深褐，剛好就是真實蝴蝶身體的顏色
+    const bodies = isDark
+      ? [makeBodySprite(true, 'rgba(226, 240, 255, 0.92)')]
+      : DAY_SPECIES.map((sp) => makeBodySprite(false, sp.edge))
+
+    let clouds: Cloud[] = []
+    let ray: Ray | null = null
+    let nextRayAt = performance.now() + 4000 + Math.random() * 8000
+
+    /**
+     * 白天的天空。
+     *
+     * 上方是較深的碧藍，往下漸淡到接近白的地平線 —— 真實的天空就是
+     * 這個方向，因為越靠近地平線，視線穿過的大氣越厚，藍光散射掉的
+     * 比例越高。順著這個規律畫，不必刻意就會像。
+     *
+     * 內容大多集中在畫面中下段，那裡本來就該是最淡的，
+     * 所以這個漸層同時也是可讀性的保障。
+     */
+    function drawDaySky() {
+      const sky = ctx.createLinearGradient(0, 0, 0, height)
+      sky.addColorStop(0, '#bcd8f5')
+      sky.addColorStop(0.34, '#d6e7f8')
+      sky.addColorStop(0.7, '#eaf1fb')
+      sky.addColorStop(1, '#f6f8fc')
+      ctx.fillStyle = sky
+      ctx.fillRect(0, 0, width, height)
+
+      // 陽光：右上角一團暖光。位置固定，像一個確定的光源
+      const sun = ctx.createRadialGradient(
+        width * 0.82, height * 0.06, 0,
+        width * 0.82, height * 0.06, Math.max(width, height) * 0.55,
+      )
+      sun.addColorStop(0, 'rgba(255, 244, 214, 0.85)')
+      sun.addColorStop(0.28, 'rgba(255, 238, 205, 0.34)')
+      sun.addColorStop(1, 'rgba(255, 236, 200, 0)')
+      ctx.fillStyle = sun
+      ctx.fillRect(0, 0, width, height)
+    }
+
+    /**
+     * 白天的光束 —— 陽光斜斜地掃過畫面。
+     *
+     * 這是流星在白天的對應物，但語彙必須不一樣：流星是快速劃過的
+     * 一個亮點，而陽光是慢慢移動的一整片。一樣的速度感放在白天
+     * 會變成很怪的東西，像有人拿手電筒在掃。
+     *
+     * 角度跟太陽的位置一致（右上），所以它讀起來是「陽光穿過雲隙」
+     * 而不是一條不知從哪來的光。
+     */
+    function spawnRay() {
+      ray = {
+        x: -width * 0.35,
+        width: width * (0.1 + Math.random() * 0.14),
+        life: 0,
+        ttl: 5200 + Math.random() * 3600,
+      }
+    }
+
+    function drawRay(now: number) {
+      if (reduced) return
+
+      if (!ray && now >= nextRayAt) spawnRay()
+      if (!ray) return
+
+      ray.life += 16
+      const t = ray.life / ray.ttl
+      if (t >= 1) {
+        ray = null
+        nextRayAt = now + 9000 + Math.random() * 14000
+        return
+      }
+
+      // 兩端淡、中間濃 —— 不要讓它憑空出現又憑空消失
+      const fade = Math.sin(Math.PI * t)
+      ray.x += width * 0.0012
+
+      ctx.save()
+      // 從右上往左下斜，跟太陽的位置對得起來
+      ctx.translate(ray.x, 0)
+      ctx.rotate(0.42)
+
+      const g = ctx.createLinearGradient(-ray.width, 0, ray.width, 0)
+      g.addColorStop(0, 'rgba(255, 246, 219, 0)')
+      g.addColorStop(0.5, `rgba(255, 249, 228, ${0.34 * fade})`)
+      g.addColorStop(1, 'rgba(255, 246, 219, 0)')
+      ctx.fillStyle = g
+
+      // 高度給足，斜過來之後才蓋得滿整個畫面
+      const h = Math.hypot(width, height) * 1.6
+      ctx.fillRect(-ray.width, -h * 0.3, ray.width * 2, h)
+      ctx.restore()
+    }
+
+    function buildClouds() {
+      const count = Math.max(3, Math.round(width / 420))
+      clouds = Array.from({ length: count }, () => {
+        const puffCount = 4 + Math.floor(Math.random() * 4)
+        const base = 34 + Math.random() * 46
+        return {
+          x: Math.random() * (width + 400) - 200,
+          // 只在上半部。雲壓在文字上會變成髒污，而且天上本來就沒有低到腳邊的雲
+          y: height * (0.04 + Math.random() * 0.34),
+          puffs: Array.from({ length: puffCount }, (_, i) => ({
+            dx: (i - puffCount / 2) * base * 0.62,
+            dy: (Math.random() - 0.5) * base * 0.42,
+            r: base * (0.55 + Math.random() * 0.6),
+          })),
+          // 遠的慢、近的快，就有了層次
+          speed: 0.05 + Math.random() * 0.16,
+          alpha: 0.30 + Math.random() * 0.34,
+        }
+      })
+    }
+
+    function drawClouds() {
+      for (const c of clouds) {
+        if (!reduced) c.x += c.speed
+        // 整朵飄出右側就從左邊繞回來
+        if (c.x - 260 > width) c.x = -260
+
+        for (const puff of c.puffs) {
+          const px = c.x + puff.dx
+          const py = c.y + puff.dy
+          const g = ctx.createRadialGradient(px, py, 0, px, py, puff.r)
+          // 雲不是純白 —— 頂部受光偏暖，邊緣散開成透明
+          g.addColorStop(0, `rgba(255, 255, 255, ${c.alpha})`)
+          g.addColorStop(0.55, `rgba(252, 253, 255, ${c.alpha * 0.5})`)
+          g.addColorStop(1, 'rgba(248, 251, 255, 0)')
+          ctx.fillStyle = g
+          ctx.beginPath()
+          ctx.arc(px, py, puff.r, 0, Math.PI * 2)
+          ctx.fill()
+        }
+      }
+    }
     let butterflies: Butterfly[] = []
     let nextButterflyAt = performance.now() + 1800 + Math.random() * 3000
 
@@ -315,6 +820,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
       dust = buildDust()
+      buildClouds()
       // 蝴蝶刻意不清空。牠們的路徑是用絕對座標算的，尺寸變了頂多稍微
       // 偏離，飛出畫面後自然會換新的一隻 —— 而清空的代價是使用者
       // 眼前的蝴蝶憑空消失，那個突兀遠大於路徑偏一點點。
@@ -353,7 +859,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
      * 所以每一隻的弧線都不一樣 —— 走直線會很像遊戲裡的敵機。
      */
     function spawnButterfly(delay = 0) {
-      const pick = Math.floor(Math.random() * WING_HUES.length)
+      const pick = Math.floor(Math.random() * wings.length)
       const fromLeft = Math.random() < 0.5
       const x0 = fromLeft ? -80 : width + 80
       const x1 = fromLeft ? width + 80 : -80
@@ -380,13 +886,16 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         bobSpeed: 0.0022 + Math.random() * 0.0018,
         bobAmp: 9 + Math.random() * 16,
         delay,
+        // 有些偏左、有些偏右，也有少數幾乎正對著看
+        lean: (Math.random() * 2 - 1) * 0.55,
         sprite: pick,
-        hue: WING_HUES[pick],
+        hue: wingHues[pick],
         trail: [],
       })
       const b = butterflies[butterflies.length - 1]
       const depth = Math.random()
-      b.scale = 0.34 + depth * 0.5
+      // 側飛把水平方向壓掉一半，所以整體要放大才維持得住存在感
+      b.scale = 0.5 + depth * 0.6
       b.speed = (0.000075 + (1 - depth) * 0.00009)
     }
 
@@ -413,7 +922,11 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     function readingDim(x: number): number {
       const centerDist = Math.abs(x - width / 2) / (width / 2)
       // 中央 55% 壓到三成亮，往兩側逐漸放開
-      return 0.3 + 0.7 * Math.min(1, Math.max(0, (centerDist - 0.28) / 0.34))
+      // 夜裡壓到三成 —— 發光的線條穿過中文筆畫特別傷。
+      // 白天壓到六成就夠：填色的蝴蝶不會發光，而卡片在淺色主題下是
+      // 不透明得多的白底，本來就擋掉大半
+      const floor = isDark ? 0.3 : 0.6
+      return floor + (1 - floor) * Math.min(1, Math.max(0, (centerDist - 0.28) / 0.34))
     }
 
     function drawButterflies(now: number) {
@@ -466,7 +979,13 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         // 前景不再額外壓暗中央 —— 它本來就整層都很淡，
         // 再壓一次會變回看不見，那就失去分層的意義
         const dim = front ? 1 : readingDim(x)
-        const alpha = fade * dim * layerAlpha
+
+        // 白天的卡片比夜裡透（淺色主題是 60% 白，夜裡是 52% 深藍），
+        // 所以後層那隻穿過卡片時會更明顯。整體再壓一階
+        // 後層在卡片後面，卡片本身就是保護 —— 不必再自己壓一次。
+        // 白天真正需要克制的是前層，那一層在文字之上
+        const dayFactor = 1
+        const alpha = fade * dim * layerAlpha * dayFactor
 
         b.trail.push({ x, y })
         // 蝴蝶每幀只移動一到兩個像素，26 個點的軌跡總長不到 50px ——
@@ -501,20 +1020,25 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
             ctx.moveTo(b.trail[from].x, b.trail[from].y)
             for (let i = from + 1; i < to; i++) ctx.lineTo(b.trail[i].x, b.trail[i].y)
 
-            // 外層：寬而暈，負責「有一道光劃過」的存在感
-            ctx.strokeStyle = dark
-              ? `hsla(${b.hue}, 95%, 66%, ${0.34 * k * k * alpha})`
-              : `hsla(${b.hue}, 68%, 58%, ${0.22 * k * k * alpha})`
-            ctx.lineWidth = 6.5 * k * b.scale
-            ctx.stroke()
+            if (dark) {
+              // 夜：發光的軌跡。外層寬而暈，負責「有一道光劃過」的存在感
+              ctx.strokeStyle = `hsla(${b.hue}, 95%, 66%, ${0.34 * k * k * alpha})`
+              ctx.lineWidth = 6.5 * k * b.scale
+              ctx.stroke()
 
-            // 內層：只在最靠近蝴蝶的兩段出現，讓軌跡有明確的「頭」
-            // 而不是一條均勻的帶子
-            if (tier >= TIERS - 2) {
-              ctx.strokeStyle = dark
-                ? `hsla(${b.hue + 12}, 100%, 88%, ${0.45 * k * k * alpha})`
-                : `hsla(${b.hue}, 78%, 46%, ${0.4 * k * k * alpha})`
-              ctx.lineWidth = 2 * k * b.scale
+              // 內層：只在最靠近蝴蝶的兩段出現，讓軌跡有明確的「頭」
+              // 而不是一條均勻的帶子
+              if (tier >= TIERS - 2) {
+                ctx.strokeStyle = `hsla(${b.hue + 12}, 100%, 88%, ${0.45 * k * k * alpha})`
+                ctx.lineWidth = 2 * k * b.scale
+                ctx.stroke()
+              }
+            } else {
+              // 日：不畫光帶。陽光下不會有一條發亮的線跟在蝴蝶後面，
+              // 那是夜晚的語彙。白天留下的是一道很淡的空氣擾動，
+              // 寬而極透，比較像是「牠剛剛經過這裡」的殘影
+              ctx.strokeStyle = `hsla(${b.hue}, 60%, 62%, ${0.1 * k * k * alpha})`
+              ctx.lineWidth = 9 * k * b.scale
               ctx.stroke()
             }
           }
@@ -522,9 +1046,20 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
         // --- 本體 ---
         b.flap += b.flapSpeed * 16
-        // 拍翅：水平縮放在 0.18~1 之間擺動。不歸零，
-        // 完全閉合的瞬間會整隻消失，看起來像閃爍
-        const open = 0.18 + 0.82 * Math.abs(Math.cos(b.flap))
+
+        // 拍翅 —— 側飛的視角。
+        //
+        // 先前讓水平縮放在 0.18~1 之間擺動，於是每個週期都會有一瞬間
+        // 整片攤平。那是標本的視角：把蝴蝶釘在板子上才會兩翼全開對著人。
+        // 真的在飛的蝴蝶是從側面看到的，兩翼上下開合，最開也只到
+        // 半展的程度。
+        //
+        // 不歸零：完全閉合的瞬間會整隻消失，看起來像閃爍。
+        const open = 0.16 + 0.5 * Math.abs(Math.cos(b.flap))
+
+        // 近的那片翅膀比遠的大。兩邊等大就退回俯視了
+        const nearOpen = open * (1 + b.lean * 0.4)
+        const farOpen = open * (1 - b.lean * 0.4)
 
         // 讓機身朝著行進方向 —— 不轉的話飛下坡時會像在平移
         const angle = Math.atan2(ay - by, ax - bx)
@@ -535,20 +1070,37 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
         ctx.save()
         ctx.translate(x, y)
-        ctx.rotate(angle * 0.35) // 只轉一部分，全轉會太用力
+        // 身體對齊行進方向：頭在前、尾在後。
+        //
+        // 貼圖裡身體的頭朝上（-y）、翅膀在左右兩側，所以整隻多轉 90°
+        // 之後，頭就指向行進方向，翅膀自然落在航線的上下兩側 ——
+        // 而拍翅原本是水平壓縮，跟著轉成上下開合，正好就是蝴蝶飛行的樣子。
+        //
+        // 角度取自路徑的切線，而切線是連續變化的，所以牠只會轉彎，
+        // 不會翻滾。
+        ctx.rotate(angle + Math.PI / 2)
         ctx.globalAlpha = alpha
 
-        // 右翅
+        // 遠的那片先畫，近的後畫 —— 這樣近的會壓在遠的上面，
+        // 前後關係才對得起來
+        const farFirst = b.lean >= 0
+
         ctx.save()
-        ctx.scale(open, 1)
+        ctx.scale(farFirst ? -farOpen : farOpen, 1)
         ctx.drawImage(wing, -sw, -sh / 2, sw, sh)
         ctx.restore()
 
-        // 左翅：水平翻轉同一張貼圖
         ctx.save()
-        ctx.scale(-open, 1)
+        ctx.scale(farFirst ? nearOpen : -nearOpen, 1)
         ctx.drawImage(wing, -sw, -sh / 2, sw, sh)
         ctx.restore()
+
+        // 身體畫在最後，蓋在兩片翅膀的接縫上 ——
+        // 那條接縫本來就該被身體遮住，翅膀是長在身體上的
+        const body = bodies[b.sprite % bodies.length]
+        const bw = body.width * b.scale * layerScale
+        const bh = body.height * b.scale * layerScale
+        ctx.drawImage(body, -bw / 2, -bh / 2, bw, bh)
 
         ctx.restore()
         ctx.globalAlpha = 1
@@ -593,7 +1145,6 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       }
 
       ctx.clearRect(0, 0, width, height)
-      ctx.globalCompositeOperation = 'lighter'
 
       // 前景層只有蝴蝶。星塵與星光鋪在文字上面會直接毀掉可讀性
       if (front) {
@@ -602,6 +1153,20 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         if (running) raf = requestAnimationFrame(draw)
         return
       }
+
+      // 白天畫的是天空與雲，不是星星。
+      // 疊加模式在白底上只會得到白色，所以整條路都用一般疊合。
+      if (!isDark) {
+        ctx.globalCompositeOperation = 'source-over'
+        drawDaySky()
+        drawRay(now)
+        drawClouds()
+        drawButterflies(now)
+        if (running) raf = requestAnimationFrame(draw)
+        return
+      }
+
+      ctx.globalCompositeOperation = 'lighter'
 
       // 星塵極緩慢地飄，接縫處再貼一張，看不出重複
       if (dust) {

@@ -47,6 +47,19 @@ export function CursorTrail() {
     let points: Point[] = []
     let raf = 0
 
+    // 夜裡是紫色的霓虹光；白天是陽光的暖金。
+    //
+    // 白天不能靠「亮」取勝 —— 淺色底上越亮越看不見，
+    // 所以三層都往深的方向走，靠彩度與明度差把它壓出來。
+    const hue = isDark ? 272 : 38
+    const sat = isDark ? 96 : 92
+    const outerL = isDark ? 62 : 58
+    const midL = isDark ? 72 : 48
+    const coreL = isDark ? 90 : 36
+    const outerA = isDark ? 0.26 : 0.2
+    const midA = isDark ? 0.55 : 0.42
+    const coreA = isDark ? 0.8 : 0.62
+
     function resize() {
       dpr = Math.min(window.devicePixelRatio || 1, 2)
       width = window.innerWidth
@@ -69,8 +82,9 @@ export function CursorTrail() {
         return
       }
 
-      // 疊加模式，交疊處會更亮，像光而不是顏料
-      ctx.globalCompositeOperation = 'lighter'
+      // 夜裡用疊加，交疊處會更亮，像光而不是顏料。
+      // 白天不行 —— 疊加在白底上只會得到白色，等於什麼都沒畫
+      ctx.globalCompositeOperation = isDark ? 'lighter' : 'source-over'
       ctx.lineCap = 'round'
       ctx.lineJoin = 'round'
 
@@ -86,21 +100,21 @@ export function CursorTrail() {
         //
         // 衰減用 k 而不是 k²：平方會讓中段以後迅速掉到看不見，
         // 結果是只有游標正後方那一小截亮著，看起來像個光點而不是拖曳。
-        ctx.strokeStyle = `hsla(272, 96%, 62%, ${0.26 * k})`
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${outerL}%, ${outerA * k})`
         ctx.lineWidth = 13 * k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
         ctx.stroke()
 
-        ctx.strokeStyle = `hsla(268, 100%, 72%, ${0.55 * k})`
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${midL}%, ${midA * k})`
         ctx.lineWidth = 5.5 * k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
         ctx.stroke()
 
-        ctx.strokeStyle = `hsla(280, 100%, 90%, ${0.8 * k * k})`
+        ctx.strokeStyle = `hsla(${hue}, ${sat}%, ${coreL}%, ${coreA * k * k})`
         ctx.lineWidth = 1.8 * k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
