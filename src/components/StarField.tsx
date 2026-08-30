@@ -230,21 +230,30 @@ const MAX_BUTTERFLIES = 1
  * 所以還看得出「那裡有一顆」而不是一片泛光。
  */
 function makeMoonSprite(r: number): HTMLCanvasElement {
-  const size = Math.ceil(r * 8)
+  // r 是月亮本體的視半徑；貼圖再往外留兩倍多給光暈
+  const size = Math.ceil(r * 5)
   const c = document.createElement('canvas')
   c.width = c.height = size
   const g = c.getContext('2d')!
   const cx = size / 2
   const cy = size / 2
+  const half = size / 2
 
-  // 微光。亮度壓到剛好「看得出那裡有一顆」的程度 ——
-  // 月亮是夜的一部分，不是畫面的主角。太亮的話整片星空都被它壓掉
-  const glow = g.createRadialGradient(cx, cy, 0, cx, cy, size / 2)
-  glow.addColorStop(0, 'rgba(242, 246, 255, 0.42)')
-  glow.addColorStop(0.07, 'rgba(230, 238, 255, 0.3)')
-  glow.addColorStop(0.18, 'rgba(206, 222, 252, 0.14)')
-  glow.addColorStop(0.38, 'rgba(184, 204, 248, 0.05)')
-  glow.addColorStop(1, 'rgba(166, 190, 244, 0)')
+  // 本體要有一段大致均勻的亮區，才會被讀成「一顆有大小的東西」。
+  // 先前的亮核只佔貼圖半徑的百分之七 —— 那個尺度就是一顆星星，
+  // 不管畫得多柔都不會變成月亮。
+  //
+  // 亮度仍然壓著：月亮是夜的一部分，不是畫面的主角。
+  // 放大而不加亮，就是「大而微光」。
+  const body = (r * 0.78) / half
+  const rim = r / half
+
+  const glow = g.createRadialGradient(cx, cy, 0, cx, cy, half)
+  glow.addColorStop(0, 'rgba(244, 248, 255, 0.4)')
+  glow.addColorStop(body, 'rgba(236, 243, 255, 0.33)')
+  glow.addColorStop(rim, 'rgba(214, 228, 252, 0.17)')
+  glow.addColorStop(rim + (1 - rim) * 0.3, 'rgba(190, 210, 250, 0.06)')
+  glow.addColorStop(1, 'rgba(170, 194, 246, 0)')
   g.fillStyle = glow
   g.fillRect(0, 0, size, size)
 
@@ -806,14 +815,20 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     }
 
     function buildClouds() {
-      const count = Math.max(3, Math.round(width / 420))
+      const narrow = width < 640
+      // 窄螢幕上雲的絕對尺寸要放大。同樣一朵在手機上只佔畫面的
+      // 一小塊，看起來像污漬而不是雲 —— 雲之所以是雲，一部分來自
+      // 它相對於天空的大小
+      const sizeBoost = narrow ? 1.5 : 1
+      const count = Math.max(narrow ? 4 : 3, Math.round(width / 420))
       clouds = Array.from({ length: count }, () => {
         const puffCount = 4 + Math.floor(Math.random() * 4)
-        const base = 34 + Math.random() * 46
+        const base = (34 + Math.random() * 46) * sizeBoost
         return {
           x: Math.random() * (width + 400) - 200,
-          // 只在上半部。雲壓在文字上會變成髒污，而且天上本來就沒有低到腳邊的雲
-          y: height * (0.04 + Math.random() * 0.34),
+          // 只在上半部。雲壓在文字上會變成髒污，而且天上本來就沒有低到腳邊的雲。
+          // 手機上可以放低一點 —— 那裡的天空範圍本來就窄
+          y: height * (0.03 + Math.random() * (narrow ? 0.42 : 0.34)),
           puffs: Array.from({ length: puffCount }, (_, i) => ({
             dx: (i - puffCount / 2) * base * 0.62,
             dy: (Math.random() - 0.5) * base * 0.42,
@@ -821,7 +836,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
           })),
           // 遠的慢、近的快，就有了層次
           speed: 0.05 + Math.random() * 0.16,
-          alpha: 0.30 + Math.random() * 0.34,
+          // 濃度提高。先前壓在淺藍天空上幾乎看不出來 ——
+          // 雲本來就該是白天最明顯的那個元素
+          alpha: 0.44 + Math.random() * 0.4,
         }
       })
     }
@@ -922,8 +939,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       dust = buildDust()
       buildClouds()
 
-      // 尺寸跟著畫面走，小螢幕上不要出現一顆佔掉半邊天的月亮
-      moon = isDark ? makeMoonSprite(Math.max(26, Math.min(46, width * 0.045))) : null
+      // 尺寸跟著畫面走，小螢幕上不要出現一顆佔掉半邊天的月亮。
+      // 但下限要夠大 —— 太小的話不論怎麼畫都只會被當成星星
+      moon = isDark ? makeMoonSprite(Math.max(46, Math.min(84, width * 0.075))) : null
       // 蝴蝶刻意不清空。牠們的路徑是用絕對座標算的，尺寸變了頂多稍微
       // 偏離，飛出畫面後自然會換新的一隻 —— 而清空的代價是使用者
       // 眼前的蝴蝶憑空消失，那個突兀遠大於路徑偏一點點。
