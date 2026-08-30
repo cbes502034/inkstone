@@ -77,7 +77,15 @@ class Settings(BaseSettings):
 
     # --- Hugging Face ---
     HF_TOKEN: str | None = None
-    HF_TEXT_MODEL: str = "Qwen/Qwen2.5-7B-Instruct"
+    # 貼進雲端平台的環境變數欄位時很容易夾帶尾端換行或空白。
+    # 那會讓 Authorization 標頭變成不合法的值，對方直接回 401，
+    # 而 token 本身看起來完全正常 —— 這種問題肉眼查不出來。
+    # 這個 id 必須出現在 https://router.huggingface.co/v1/models 的清單裡。
+    # 模型倉庫頁面顯示「有供應商在跑」不代表 router 認得它 —— 兩份資料不同步，
+    # 而 router 不認得時只回一個 400，看起來像請求格式錯誤，很容易查錯方向。
+    # 選 Instruct 版而不是會輸出推理過程的版本：草稿要照「第一行標題、
+    # 空行、內文」的格式回來，夾帶思考段落會把解析打亂。
+    HF_TEXT_MODEL: str = "Qwen/Qwen3-4B-Instruct-2507"
     HF_MODERATION_MODEL: str = "textdetox/xlmr-large-toxicity-classifier"
     HF_TIMEOUT_SECONDS: float = 60.0
 
@@ -177,6 +185,23 @@ class Settings(BaseSettings):
         """
         url = self.database_url
         return "pooler.supabase.com" in url or ":6543" in url
+
+    @field_validator("HF_TOKEN", "HF_TEXT_MODEL", mode="before")
+    @classmethod
+    def _trim_hf(cls, v, info):
+        """
+        去掉貼上時夾帶的空白與換行。
+
+        空字串的處理要分開：HF_TOKEN 可以是 None（代表沒設定，走本機樣板），
+        但 HF_TEXT_MODEL 宣告成 str，回 None 會讓程式啟動就失敗，
+        所以那一個留給欄位預設值去補。
+        """
+        if not isinstance(v, str):
+            return v
+        v = v.strip()
+        if v:
+            return v
+        return None if info.field_name == "HF_TOKEN" else "Qwen/Qwen3-4B-Instruct-2507"
 
     @field_validator("JWT_SECRET")
     @classmethod

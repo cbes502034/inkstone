@@ -195,7 +195,18 @@ async def _call_hf(prompt: str) -> str:
         resp.raise_for_status()
 
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    return _strip_thinking(data["choices"][0]["message"]["content"])
+
+
+def _strip_thinking(text: str) -> str:
+    """
+    有些模型會把推理過程包在 <think></think> 裡一起輸出。
+
+    我們靠「第一行是標題」來切草稿，夾帶思考段落會讓標題變成一堆自言自語。
+    現在選的是 Instruct 版本不該有這個行為，但模型隨時會被換掉，
+    留一道防線比事後才發現便宜。
+    """
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.I).strip()
 
 
 def _fallback_title(prompt: str) -> str:
@@ -253,6 +264,21 @@ async def probe() -> dict:
     }
     if _last_failure:
         result["lastRealFailure"] = _last_failure
+
+    # 先查 router 認不認這個模型。這份清單是公開的，不需要 token ——
+    # 也就是說就算金鑰整個壞掉，這一項仍然驗得出來。
+    #
+    # 這一步是踩過坑才加的：模型倉庫頁面會顯示「某某供應商 live」，
+    # 但那份中繼資料跟 router 實際供應的清單並不同步。router 不認得時
+    # 只回一個 400，看起來像請求格式寫錯，完全不會聯想到是模型選錯。
+    supported = await _router_supports(settings.HF_TEXT_MODEL.split(":")[0])
+    result["modelOnRouter"] = supported
+    if supported is False:
+        result["verdict"] = (
+            f"router 不支援 {settings.HF_TEXT_MODEL} —— 這會回 400。"
+            "請從 https://router.huggingface.co/v1/models 的清單裡挑一個"
+        )
+        return result
 
     if not settings.HF_TOKEN:
         result["verdict"] = "沒有設定 HF_TOKEN，一律走本機樣板"
@@ -322,3 +348,20 @@ def last_failure_code() -> str | None:
     不該掛在不需要登入的端點上。
     """
     return _last_failure["reason"] if _last_failure else None
+
+
+async def _router_supports(model_id: str) -> bool | None:
+    """
+    這個模型在不在 router 的供應清單裡。
+
+    查不到（連線失敗、格式改了）時回 None 而不是 False ——
+    "不知道" 跟 "確定不支援" 是兩件事，混在一起會給出錯誤的結論。
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get("https://router.huggingface.co/v1/models")
+            resp.raise_for_status()
+            return any(m.get("id") == model_id for m in resp.json().get("data", []))
+    except Exception:
+        log.warning("查不到 router 的模型清單", exc_info=True)
+        return None
