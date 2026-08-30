@@ -22,7 +22,7 @@ interface Point {
 }
 
 /** 一個點從出現到完全消失的毫秒數 */
-const LIFE = 420
+const LIFE = 520
 
 export function CursorTrail() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -82,16 +82,26 @@ export function CursorTrail() {
         const k = 1 - age
         if (k <= 0) continue
 
-        // 兩層：外層粗而暈的紫，內層細而亮的淡紫白 —— 霓虹燈管的結構
-        ctx.strokeStyle = `hsla(268, 94%, 68%, ${0.32 * k * k})`
-        ctx.lineWidth = 7 * k
+        // 三層：外暈、主體、亮芯 —— 霓虹燈管的結構。
+        //
+        // 衰減用 k 而不是 k²：平方會讓中段以後迅速掉到看不見，
+        // 結果是只有游標正後方那一小截亮著，看起來像個光點而不是拖曳。
+        ctx.strokeStyle = `hsla(272, 96%, 62%, ${0.26 * k})`
+        ctx.lineWidth = 13 * k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)
         ctx.stroke()
 
-        ctx.strokeStyle = `hsla(276, 100%, 86%, ${0.5 * k * k * k})`
-        ctx.lineWidth = 2.2 * k
+        ctx.strokeStyle = `hsla(268, 100%, 72%, ${0.55 * k})`
+        ctx.lineWidth = 5.5 * k
+        ctx.beginPath()
+        ctx.moveTo(a.x, a.y)
+        ctx.lineTo(b.x, b.y)
+        ctx.stroke()
+
+        ctx.strokeStyle = `hsla(280, 100%, 90%, ${0.8 * k * k})`
+        ctx.lineWidth = 1.8 * k
         ctx.beginPath()
         ctx.moveTo(a.x, a.y)
         ctx.lineTo(b.x, b.y)

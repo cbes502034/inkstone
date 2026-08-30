@@ -315,8 +315,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
       dust = buildDust()
-      // 路徑是照舊尺寸算的，視窗改變後會飛到畫面外或穿牆，重來比較乾淨
-      butterflies = []
+      // 蝴蝶刻意不清空。牠們的路徑是用絕對座標算的，尺寸變了頂多稍微
+      // 偏離，飛出畫面後自然會換新的一隻 —— 而清空的代價是使用者
+      // 眼前的蝴蝶憑空消失，那個突兀遠大於路徑偏一點點。
 
       const count = Math.round((width * height) / 9000)
       glows = Array.from({ length: count }, () => {
@@ -676,7 +677,21 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     raf = requestAnimationFrame(draw)
 
     let resizeTimer = 0
+
+    /**
+     * 手機捲動時網址列會收合或展開，視窗高度跟著變 —— 那會讓
+     * ResizeObserver 一直觸發。每一次重建都要重畫上千顆星塵，
+     * 而且畫面會閃一下，捲個幾下整片背景就抖個不停。
+     *
+     * 寬度沒變、高度只差一點點的情況幾乎一定是網址列，直接忽略。
+     * 星塵本來就是無縫平鋪的，高度差一點看不出來。
+     */
     const onResize = () => {
+      const rect = canvas.getBoundingClientRect()
+      const sameWidth = Math.abs(rect.width - width) < 1
+      const smallHeightDelta = Math.abs(rect.height - height) < 140
+      if (width > 0 && sameWidth && smallHeightDelta) return
+
       // 重建星塵有成本，等使用者拉完視窗再做
       window.clearTimeout(resizeTimer)
       resizeTimer = window.setTimeout(build, 180)

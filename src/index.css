@@ -235,21 +235,22 @@
   }
 
   /* ---------------------------------------------------------------
-     滑鼠 — 星芒。
-     只在有精準指標的裝置上換掉游標；觸控裝置沒有游標，換了只會出事。
+     滑鼠 — 紫點。
+
+     三層同心圓：外圈柔暈、中圈實色、正中央一點亮芯。
+     只用單一實心圓的話，游標壓在跟它顏色相近的區域上會直接消失 ——
+     外面那圈暈就是為了在深色夜空與淺色晨曦上都還看得見。
+
+     只在有精準指標的裝置上換掉；觸控裝置沒有游標，換了只會出事。
      輸入類元素維持原生 I 形游標，不影響打字時的定位。
   ---------------------------------------------------------------- */
   @media (pointer: fine) {
     body {
-      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 1C11.6 7.4 14.6 10.4 21 11C14.6 11.6 11.6 14.6 11 21C10.4 14.6 7.4 11.6 1 11C7.4 10.4 10.4 7.4 11 1Z' fill='%23ffffff' stroke='%23000000' stroke-opacity='0.35' stroke-width='0.6'/%3E%3C/svg%3E")
-          11 11,
-        auto;
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='8' fill='%23a855f7' fill-opacity='0.22'/%3E%3Ccircle cx='10' cy='10' r='4.5' fill='%23c084fc' fill-opacity='0.5'/%3E%3Ccircle cx='10' cy='10' r='2.6' fill='%23f0e0ff'/%3E%3C/svg%3E") 10 10, auto;
     }
 
     :root[data-theme='light'] body {
-      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'%3E%3Cpath d='M11 1C11.6 7.4 14.6 10.4 21 11C14.6 11.6 11.6 14.6 11 21C10.4 14.6 7.4 11.6 1 11C7.4 10.4 10.4 7.4 11 1Z' fill='%2314182a' stroke='%23ffffff' stroke-opacity='0.6' stroke-width='0.6'/%3E%3C/svg%3E")
-          11 11,
-        auto;
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Ccircle cx='10' cy='10' r='8' fill='%237c3aed' fill-opacity='0.16'/%3E%3Ccircle cx='10' cy='10' r='4.5' fill='%238b5cf6' fill-opacity='0.55'/%3E%3Ccircle cx='10' cy='10' r='2.6' fill='%236d28d9'/%3E%3C/svg%3E") 10 10, auto;
     }
 
     a,
@@ -258,9 +259,7 @@
     [role='switch'],
     label,
     summary {
-      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'%3E%3Cpath d='M13 1.5C13.7 8.6 17.4 12.3 24.5 13C17.4 13.7 13.7 17.4 13 24.5C12.3 17.4 8.6 13.7 1.5 13C8.6 12.3 12.3 8.6 13 1.5Z' fill='%236c9ffb'/%3E%3C/svg%3E")
-          13 13,
-        pointer;
+      cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23a855f7' fill-opacity='0.28'/%3E%3Ccircle cx='12' cy='12' r='6' fill='%23c084fc' fill-opacity='0.65'/%3E%3Ccircle cx='12' cy='12' r='3.4' fill='%23ffffff'/%3E%3C/svg%3E") 12 12, pointer;
     }
 
     input,
