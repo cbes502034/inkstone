@@ -36,8 +36,11 @@ interface Shooting {
 }
 
 interface Ray {
-  /** 光束中心在畫面上的水平位置，會隨時間往右移 */
+  /** 起點。整條一次出現，不會移動 */
   x: number
+  y: number
+  angle: number
+  length: number
   width: number
   life: number
   ttl: number
@@ -211,6 +214,43 @@ const MAX_BUTTERFLIES = 1
  *
  * 方向：頭朝上、腹朝下。翅膀往左右張開，所以身體的軸是垂直的。
  */
+/**
+ * 月亮。
+ *
+ * 白天有太陽，夜裡就該有月亮 —— 少了它，那片夜空只是「有星星的
+ * 深色背景」，而不是一個有光源的天空。星星的光太散，撐不起
+ * 「這裡有東西在照著」的感覺。
+ *
+ * 畫法比照太陽：一團沒有邊界的光，不是一個有形體的圓盤。
+ * 先前畫成有月海、有明暗交界的球，結果跟太陽變成兩種語言 ——
+ * 一邊是氛圍、一邊是插圖。兩個光源要嘛都給形體，要嘛都不給，
+ * 而這個背景的調性是前者會太搶。
+ *
+ * 中心亮、往外化開，只是收得比太陽快一點點，
+ * 所以還看得出「那裡有一顆」而不是一片泛光。
+ */
+function makeMoonSprite(r: number): HTMLCanvasElement {
+  const size = Math.ceil(r * 8)
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const g = c.getContext('2d')!
+  const cx = size / 2
+  const cy = size / 2
+
+  // 微光。亮度壓到剛好「看得出那裡有一顆」的程度 ——
+  // 月亮是夜的一部分，不是畫面的主角。太亮的話整片星空都被它壓掉
+  const glow = g.createRadialGradient(cx, cy, 0, cx, cy, size / 2)
+  glow.addColorStop(0, 'rgba(242, 246, 255, 0.42)')
+  glow.addColorStop(0.07, 'rgba(230, 238, 255, 0.3)')
+  glow.addColorStop(0.18, 'rgba(206, 222, 252, 0.14)')
+  glow.addColorStop(0.38, 'rgba(184, 204, 248, 0.05)')
+  glow.addColorStop(1, 'rgba(166, 190, 244, 0)')
+  g.fillStyle = glow
+  g.fillRect(0, 0, size, size)
+
+  return c
+}
+
 function makeBodySprite(dark: boolean, color: string): HTMLCanvasElement {
   // 身體要明顯小於翅展。先前跟翅膀差不多高，看起來變成
   // 「大身體配小翅膀」，比例整個反過來
@@ -640,8 +680,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       : DAY_SPECIES.map((sp) => makeBodySprite(false, sp.edge))
 
     let clouds: Cloud[] = []
-    let ray: Ray | null = null
-    let nextRayAt = performance.now() + 4000 + Math.random() * 8000
+    let moon: HTMLCanvasElement | null = null
+    let rays: Ray[] = []
+    let nextRayAt = performance.now() + 3000 + Math.random() * 5000
 
     /**
      * 白天的天空。
@@ -678,63 +719,75 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
     }
 
     /**
-     * 白天的光束 —— 陽光斜斜地掃過畫面。
+     * 白天的光線 —— 陽光撒下來。
      *
-     * 這是流星在白天的對應物，但語彙必須不一樣：流星是快速劃過的
-     * 一個亮點，而陽光是慢慢移動的一整片。一樣的速度感放在白天
-     * 會變成很怪的東西，像有人拿手電筒在掃。
+     * 這是流星在白天的對應物，但兩者的行為必須不一樣：
      *
-     * 角度跟太陽的位置一致（右上），所以它讀起來是「陽光穿過雲隙」
-     * 而不是一條不知從哪來的光。
+     *   流星是「墜落」—— 一個亮點拖著尾巴劃過去，重點在移動。
+     *   光線是「撒」—— 整條一次出現、閃一下、整條消失，重點在瞬間。
+     *
+     * 所以這裡不做位移。一次撒下兩到四道，彼此角度與長短略有不同，
+     * 像陽光穿過雲隙那樣成束落下。
      */
-    function spawnRay() {
-      ray = {
-        x: -width * 0.35,
-        width: width * (0.07 + Math.random() * 0.1),
-        life: 0,
-        ttl: 5200 + Math.random() * 3600,
+    function spawnRays() {
+      const count = 2 + Math.floor(Math.random() * 3)
+      // 同一束的角度接近 —— 它們是同一個太陽穿過同一片雲隙來的
+      const baseAngle = 1.02 + (Math.random() - 0.5) * 0.22
+      const baseX = width * (0.15 + Math.random() * 0.7)
+
+      for (let i = 0; i < count; i++) {
+        rays.push({
+          x: baseX + (i - count / 2) * (34 + Math.random() * 70),
+          y: -height * 0.1,
+          angle: baseAngle + (Math.random() - 0.5) * 0.1,
+          length: height * (0.8 + Math.random() * 0.7),
+          width: 10 + Math.random() * 26,
+          // 同一束裡彼此錯開幾十毫秒，像先後亮起來的
+          life: -i * (60 + Math.random() * 90),
+          ttl: 520 + Math.random() * 380,
+        })
       }
     }
 
-    function drawRay(now: number) {
+    function drawRays(now: number) {
       if (reduced) return
 
-      if (!ray && now >= nextRayAt) spawnRay()
-      if (!ray) return
-
-      ray.life += 16
-      const t = ray.life / ray.ttl
-      if (t >= 1) {
-        ray = null
-        // 流星大約每幾秒到十幾秒來一次，白天的光束也該是同一個節奏 ——
-        // 它是流星在白天的對應物，隔太久就失去那個呼應
-        nextRayAt = now + 5000 + Math.random() * 8000
-        return
+      if (rays.length === 0 && now >= nextRayAt) {
+        spawnRays()
+        nextRayAt = now + 6000 + Math.random() * 9000
       }
 
-      // 兩端淡、中間濃 —— 不要讓它憑空出現又憑空消失
-      const fade = Math.sin(Math.PI * t)
-      ray.x += width * 0.0012
+      rays = rays.filter((r) => {
+        r.life += 16
+        if (r.life < 0) return true // 還沒輪到它亮
+        const t = r.life / r.ttl
+        if (t >= 1) return false
 
-      ctx.save()
-      // 從右上往左下斜，跟太陽的位置對得起來
-      ctx.translate(ray.x, 0)
-      ctx.rotate(0.42)
+        // 快亮、慢滅。閃光就是這個形狀 —— 平均的淡入淡出會像在呼吸
+        const fade = t < 0.18 ? t / 0.18 : (1 - t) / 0.82
 
-      const g = ctx.createLinearGradient(-ray.width, 0, ray.width, 0)
-      // 三段而不是兩段：中間一道較窄的亮芯，兩側才是散開的暈。
-      // 只有一個平均的漸層會像一片霧，看不出是「一道光」
-      g.addColorStop(0, 'rgba(255, 246, 219, 0)')
-      g.addColorStop(0.34, `rgba(255, 250, 232, ${0.3 * fade})`)
-      g.addColorStop(0.5, `rgba(255, 253, 244, ${0.72 * fade})`)
-      g.addColorStop(0.66, `rgba(255, 250, 232, ${0.3 * fade})`)
-      g.addColorStop(1, 'rgba(255, 246, 219, 0)')
-      ctx.fillStyle = g
+        ctx.save()
+        ctx.translate(r.x, r.y)
+        ctx.rotate(r.angle)
 
-      // 高度給足，斜過來之後才蓋得滿整個畫面
-      const h = Math.hypot(width, height) * 1.6
-      ctx.fillRect(-ray.width, -h * 0.3, ray.width * 2, h)
-      ctx.restore()
+        // 沿著長度方向淡出：光線是從上方灑下來的，越往下越散
+        const g = ctx.createLinearGradient(0, 0, 0, r.length)
+        g.addColorStop(0, `rgba(255, 252, 238, ${0.5 * fade})`)
+        g.addColorStop(0.35, `rgba(255, 250, 230, ${0.34 * fade})`)
+        g.addColorStop(1, 'rgba(255, 248, 226, 0)')
+        ctx.fillStyle = g
+
+        // 上寬下窄，像一道從縫隙灑開的光
+        ctx.beginPath()
+        ctx.moveTo(-r.width / 2, 0)
+        ctx.lineTo(r.width / 2, 0)
+        ctx.lineTo(r.width * 0.9, r.length)
+        ctx.lineTo(-r.width * 0.9, r.length)
+        ctx.closePath()
+        ctx.fill()
+        ctx.restore()
+        return true
+      })
     }
 
     function buildClouds() {
@@ -853,6 +906,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
       dust = buildDust()
       buildClouds()
+
+      // 尺寸跟著畫面走，小螢幕上不要出現一顆佔掉半邊天的月亮
+      moon = isDark ? makeMoonSprite(Math.max(26, Math.min(46, width * 0.045))) : null
       // 蝴蝶刻意不清空。牠們的路徑是用絕對座標算的，尺寸變了頂多稍微
       // 偏離，飛出畫面後自然會換新的一隻 —— 而清空的代價是使用者
       // 眼前的蝴蝶憑空消失，那個突兀遠大於路徑偏一點點。
@@ -1238,7 +1294,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       if (!isDark) {
         ctx.globalCompositeOperation = 'source-over'
         drawDaySky()
-        drawRay(now)
+        drawRays(now)
         drawClouds()
         drawButterflies(now)
         if (running) raf = requestAnimationFrame(draw)
@@ -1246,6 +1302,14 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       }
 
       ctx.globalCompositeOperation = 'lighter'
+
+      // 月亮先畫。它在最遠的地方，星星是飄在它前面的
+      if (moon) {
+        const mx = width * 0.82
+        const my = height * 0.13
+        ctx.globalAlpha = 1
+        ctx.drawImage(moon, mx - moon.width / 2, my - moon.height / 2)
+      }
 
       // 星塵極緩慢地飄，接縫處再貼一張，看不出重複
       if (dust) {
