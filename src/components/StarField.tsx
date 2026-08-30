@@ -778,24 +778,47 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
      * 光源在畫面內，光芒必定經過畫面。
      */
     function spawnRays() {
-      // 一次六到十道，角度散開成一束
-      const count = 7 + Math.floor(Math.random() * 5)
-      // 太陽在右上，光芒往左下灑。中心方向大約是 135°
-      const center = Math.PI * 0.72 + (Math.random() - 0.5) * 0.5
-      const fan = 0.55 + Math.random() * 0.5
+      // 星芒往四面八方射出去，不是朝一個方向的扇形。
+      //
+      // 先前做成單向的一束，那是「陽光穿過雲隙」的樣子；
+      // 而參考的是鏡頭直視太陽時的星芒 —— 強光在光圈葉片的邊緣繞射，
+      // 於是從光源向各個角度射出長短不一的細芒。
+      const count = 16 + Math.floor(Math.random() * 10)
+      const base = Math.random() * Math.PI * 2
+      const diag = Math.hypot(width, height)
 
       for (let i = 0; i < count; i++) {
+        // 角度大致等分再各自抖動。完全等分會像時鐘的刻度
+        const angle = base + (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.24
+
+        // 長短差距要大：多數是短芒，少數幾道特別長。
+        // 全部一樣長會變成一顆毛球
+        const long = Math.random() < 0.22
+        const len = long
+          ? diag * (0.26 + Math.random() * 0.26)
+          : diag * (0.06 + Math.random() * 0.1)
+
         rays.push({
-          angle: center + (i / (count - 1) - 0.5) * fan + (Math.random() - 0.5) * 0.06,
-          // 粗細差距要大。全部一樣粗會像梳子，有粗有細才像光
-          spread: 0.008 + Math.random() * 0.046,
-          // 收短。橫貫整個畫面的光束太搶戲，也不像日常看到的陽光 ——
-          // 平常抬頭看到的就是太陽周圍那一圈散開的光，
-          // 而不是幾道打穿天空的光柱
-          length: Math.hypot(width, height) * (0.22 + Math.random() * 0.22),
-          life: -i * (25 + Math.random() * 45),
-          ttl: 620 + Math.random() * 460,
-          weight: 0.45 + Math.random() * 0.55,
+          angle,
+          // 越長的越細 —— 長芒是細細一條，短芒才是三角形的光瓣
+          spread: long ? 0.004 + Math.random() * 0.005 : 0.014 + Math.random() * 0.044,
+          length: len,
+          life: -i * (8 + Math.random() * 18),
+          ttl: 900 + Math.random() * 700,
+          weight: long ? 0.7 + Math.random() * 0.3 : 0.3 + Math.random() * 0.4,
+        })
+      }
+
+      // 兩道特別長的水平光條。真實鏡頭幾乎都有這個，
+      // 它比任何細節都更能讓人認出「這是強光進到鏡頭裡」
+      for (const dir of [0, Math.PI]) {
+        rays.push({
+          angle: dir + (Math.random() - 0.5) * 0.08,
+          spread: 0.003,
+          length: diag * (0.4 + Math.random() * 0.26),
+          life: 0,
+          ttl: 1100 + Math.random() * 600,
+          weight: 0.9,
         })
       }
     }
