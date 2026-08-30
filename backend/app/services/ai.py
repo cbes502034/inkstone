@@ -118,7 +118,7 @@ async def generate(prompt: str) -> AiResult:
         log.exception("Hugging Face 呼叫失敗，改用本機樣板")
         if _last_failure is None or _last_failure.get("at") != _now():
             _record_failure(type(e).__name__, str(e)[:300], _resolve_model())
-        return _local_draft(prompt)
+        return _local_draft(prompt, degraded=True)
 
     if not screen_output(text):
         return AiResult(kind="refusal", body=REFUSAL_OFF_TOPIC)
@@ -218,8 +218,17 @@ def _fallback_title(prompt: str) -> str:
     return (core[:22] + "…") if len(core) > 24 else (core or "無題")
 
 
-def _local_draft(prompt: str) -> AiResult:
-    """模型還沒接上時的樣板。結構與語氣與正式版一致，方便前端先開發。"""
+def _local_draft(prompt: str, degraded: bool = False) -> AiResult:
+    """
+    模型不可用時的備援草稿。
+
+    degraded 決定開場白怎麼寫。這件事看起來很小，實際上很重要：
+    原本不論成功或失敗都說「照你說的方向寫了一版」，等於備援在冒充模型。
+    結果是模型整整壞了一段時間都沒人發現 —— 畫面上完全看不出異狀。
+
+    現在失敗時會直說。這不是把技術細節攤給使用者看，
+    而是不要讓他以為自己拿到的是 AI 寫的東西。
+    """
     topic = _fallback_title(prompt)
     body = (
         f"最近一直在想{topic}這件事。\n\n"
@@ -234,7 +243,11 @@ def _local_draft(prompt: str) -> AiResult:
     )
     return AiResult(
         kind="draft",
-        body="照你說的方向寫了一版，你看看順不順：",
+        body=(
+            "AI 現在連不上，先給你一個起手式，可以直接改："
+            if degraded
+            else "照你說的方向寫了一版，你看看順不順："
+        ),
         title=topic,
         draft_body=body,
     )

@@ -4,7 +4,7 @@ import { motion } from 'motion/react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { posts } from '../lib/api'
-import { extractTags, readingMinutes } from '../lib/markup'
+import { readingMinutes } from '../lib/markup'
 import { relativeTime } from '../lib/time'
 import type { Post } from '../types'
 import { Avatar } from './Avatar'
@@ -48,8 +48,6 @@ export function PostCard({ post }: { post: Post }) {
     onError: () => setConfirmDelete(false),
   })
 
-  const tags = post.tags.length ? post.tags : extractTags(post.body)
-
   return (
     <motion.article
       initial={{ opacity: 0, y: 12 }}
@@ -84,7 +82,6 @@ export function PostCard({ post }: { post: Post }) {
           )}
         </div>
 
-        {/* 只有自己的文章才有編輯 —— 後端同樣會驗證擁有者，不是只靠這裡藏按鈕 */}
         {/* 只有自己的文章才有這兩顆 —— 後端同樣會驗證擁有者，不是只靠這裡藏按鈕 */}
         {post.isMine && (
           <div
@@ -125,23 +122,11 @@ export function PostCard({ post }: { post: Post }) {
         className="mb-4 line-clamp-3 text-[15px] leading-relaxed text-ink-soft"
       />
 
-      {/* 標籤 */}
-      {tags.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-x-3 gap-y-1.5">
-          {tags.slice(0, 4).map((t) => (
-            <button
-              key={t}
-              onClick={(e) => {
-                e.stopPropagation()
-                navigate(`/search?q=${encodeURIComponent(t)}`)
-              }}
-              className="text-[13px] text-accent transition-opacity hover:opacity-70"
-            >
-              #{t}
-            </button>
-          ))}
-        </div>
-      )}
+      {/*
+        這裡原本有一排標籤。摘要開始保留語法之後，同一個標籤會出現兩次 ——
+        一次在摘要的行文裡（作者原本就是那樣寫的），一次在這排。
+        拿掉這排：文章頁也沒有獨立標籤列，標籤一律以內文的一部分呈現。
+      */}
 
       {/* 互動列 */}
       <div className="flex items-center gap-5 text-[13px] text-ink-faint">

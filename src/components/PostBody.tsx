@@ -22,7 +22,17 @@ function useRenderTokens() {
       const key = `${keyPrefix}-${i}`
 
       if (t.type === 'bold') {
-        return <strong key={key}>{t.value}</strong>
+        // 字重與提亮兩件事都要做。中文字型的粗細差異本來就比西文小，
+        // 光加字重在深色底上幾乎看不出來 —— 內文是 ink-soft，
+        // 粗體提到 ink 才有對比。
+        //
+        // 樣式寫在這裡而不是交給外層的 prose-ink：卡片摘要沒有套那個 class，
+        // 交給外層就會變成「內文頁看得出來、動態牆看不出來」。
+        return (
+          <strong key={key} className="font-bold text-ink">
+            {t.value}
+          </strong>
+        )
       }
 
       if (t.type === 'tag') {

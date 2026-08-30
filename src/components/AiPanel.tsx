@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { Check, CornerDownLeft, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ai } from '../lib/api'
 import type { AiTurn } from '../types'
 import { PostBody } from './PostBody'
@@ -11,12 +11,6 @@ interface Props {
   onClose: () => void
   onAccept: (draft: { title: string; body: string }) => void
 }
-
-const SUGGESTIONS = [
-  '想寫今天通勤路上看到的事',
-  '記錄一道做失敗很多次的菜',
-  '整理最近讀完的一本書',
-]
 
 /** 手機是從底部推上來的 sheet，桌機是從右側滑入的側欄 —— 動畫方向要跟著版面走 */
 function useIsWide() {
@@ -42,6 +36,7 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
   const [turns, setTurns] = useState<AiTurn[]>([])
   const [input, setInput] = useState('')
   const scroller = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const isWide = useIsWide()
 
   // 同一次寫作的多輪對話共用一個 session，關閉面板時拿它去後端清掉暫存
@@ -58,6 +53,21 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
   }, [turns, send.isPending])
+
+  // 輸入框跟著內容長高。單靠 CSS 做不到 —— textarea 的高度由 rows 決定，
+  // 不會隨內容變，所以字一多就變成在一行的框裡捲動。
+  //
+  // 先歸零再量：不歸零的話 scrollHeight 永遠不小於目前高度，
+  // 刪字時就只會長不會縮。max-h 由 CSS 收尾，超過就換成捲動。
+  //
+  // 用 useLayoutEffect 而不是 useEffect：在瀏覽器繪製前就把高度設好，
+  // 否則會看到框先跳一下再回位。
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [input])
 
   const submit = () => {
     const text = input.trim()
@@ -130,26 +140,9 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
             {/* 對話 */}
             <div ref={scroller} className="flex-1 overflow-y-auto px-5 py-5">
               {turns.length === 0 && (
-                <div>
-                  <p className="text-[15px] leading-relaxed text-ink-soft">
-                    想寫什麼？跟我說一聲，我幫你開個頭。
-                  </p>
-                  <div className="mt-5 flex flex-col gap-2">
-                    {SUGGESTIONS.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          setInput(s)
-                        }}
-                        className="press rounded-xl border border-rule px-3.5 py-2.5 text-left
-                                   text-[14px] text-ink-soft transition-colors
-                                   hover:border-accent hover:text-ink"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <p className="text-[15px] leading-relaxed text-ink-soft">
+                  想寫什麼？跟我說一聲，我幫你開個頭。
+                </p>
               )}
 
               <div className="flex flex-col gap-5">
@@ -217,6 +210,7 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
             <div className="border-t border-rule p-4">
               <div className="flex items-end gap-2 rounded-2xl border border-rule bg-paper px-3.5 py-2.5 focus-within:border-accent">
                 <textarea
+                  ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => {
@@ -227,8 +221,9 @@ export function AiPanel({ open, onClose, onAccept }: Props) {
                   }}
                   rows={1}
                   placeholder="想寫什麼？"
-                  className="max-h-28 min-h-6 flex-1 resize-none border-none bg-transparent p-0
-                             text-[15px] outline-none placeholder:text-ink-faint"
+                  className="max-h-40 flex-1 resize-none overflow-y-auto border-none bg-transparent
+                             p-0 text-[15px] leading-relaxed outline-none
+                             placeholder:text-ink-faint"
                 />
                 <button
                   onClick={submit}
