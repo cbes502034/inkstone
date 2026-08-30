@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import type { AppNotification, Conversation, Message, Presence } from '../types'
 import { showNotification } from './notify'
+import { emitTyping } from './typing'
 import { playMessage, playNotification } from './sound'
 import { useAuth } from '../store/auth'
 
@@ -23,6 +24,10 @@ type ServerEvent =
   | { event: 'notification'; data: AppNotification }
   | { event: 'message'; data: Message }
   | { event: 'presence'; data: { userId: string; presence: Presence } }
+  | {
+      event: 'typing'
+      data: { conversationId: string; userId: string; displayName: string }
+    }
 
 function wsUrl(token: string): string {
   const base = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
@@ -30,6 +35,21 @@ function wsUrl(token: string): string {
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   url.searchParams.set('token', token)
   return url.toString()
+}
+
+/**
+ * 目前這條連線。
+ *
+ * 聊天室要送「正在輸入」訊號，但它不該自己再開一條 WebSocket ——
+ * 一個使用者開多條連線，伺服器那邊會誤判上線狀態，也浪費資源。
+ * 所以共用同一條，用一個模組層級的參考交換。
+ */
+let socket: WebSocket | null = null
+
+export function sendRealtime(payload: unknown): void {
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify(payload))
+  }
 }
 
 export function useRealtime(): void {
@@ -50,6 +70,7 @@ export function useRealtime(): void {
     const connect = () => {
       const ws = new WebSocket(wsUrl(accessToken))
       wsRef.current = ws
+      socket = ws
 
       ws.onopen = () => {
         attemptRef.current = 0
@@ -116,11 +137,20 @@ export function useRealtime(): void {
             // 好友上下線：更新所有帶到這個人的快取
             patchPresence(qc, msg.data.userId, msg.data.presence)
             break
+
+          case 'typing':
+            emitTyping(
+              msg.data.conversationId,
+              msg.data.userId,
+              msg.data.displayName,
+            )
+            break
         }
       }
 
       ws.onclose = () => {
         wsRef.current = null
+        if (socket === ws) socket = null
         if (closedByUs.current) return
 
         // 指數退避重連。網路斷掉或伺服器休眠時，
@@ -145,6 +175,7 @@ export function useRealtime(): void {
       window.clearTimeout(timerRef.current)
       wsRef.current?.close()
       wsRef.current = null
+      socket = null
     }
   }, [isAuthed, accessToken, qc])
 }

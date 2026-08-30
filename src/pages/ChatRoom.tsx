@@ -8,6 +8,8 @@ import { GroupPanel } from '../components/GroupPanel'
 import { Skeleton } from '../components/ui'
 import { chat } from '../lib/api'
 import { presenceText } from '../lib/presence'
+import { sendRealtime } from '../lib/realtime'
+import { useTypingIndicator, useTypingSender } from '../lib/typing'
 import { clockTime, dayLabel } from '../lib/time'
 import { useAuth } from '../store/auth'
 import type { Message } from '../types'
@@ -19,6 +21,9 @@ export function ChatRoom() {
   const qc = useQueryClient()
   const [draft, setDraft] = useState('')
   const [groupOpen, setGroupOpen] = useState(false)
+
+  const typingNames = useTypingIndicator(id)
+  const notifyTyping = useTypingSender(id, sendRealtime)
   const bottom = useRef<HTMLDivElement>(null)
 
   const { data: conv } = useQuery({
@@ -132,6 +137,26 @@ export function ChatRoom() {
             />
           ))}
         </div>
+        {typingNames.length > 0 && (
+          <div className="mt-3 flex items-center gap-2 px-1">
+            <span className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  className="size-1.5 rounded-full bg-ink-faint"
+                  animate={{ opacity: [0.25, 1, 0.25] }}
+                  transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.16 }}
+                />
+              ))}
+            </span>
+            <span className="text-[12px] text-ink-faint">
+              {typingNames.length === 1
+                ? `${typingNames[0]} 正在輸入`
+                : `${typingNames.length} 個人正在輸入`}
+            </span>
+          </div>
+        )}
+
         <div ref={bottom} />
       </div>
 
@@ -140,7 +165,11 @@ export function ChatRoom() {
         <div className="flex items-end gap-2 rounded-2xl border border-rule bg-paper-raised px-3.5 py-2.5 focus-within:border-accent">
           <textarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value)
+              // 內部有節流，每個按鍵都叫沒關係
+              if (e.target.value) notifyTyping()
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()

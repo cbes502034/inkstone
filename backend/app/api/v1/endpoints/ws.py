@@ -57,9 +57,14 @@ async def websocket_endpoint(ws: WebSocket, token: str = Query(...)) -> None:
 
     try:
         while True:
-            # 前端目前只會回 pong，之後要加「正在輸入…」也是走這裡
             msg = await ws.receive_json()
-            if msg.get("event") == "pong":
+            event = msg.get("event")
+
+            if event == "pong":
+                continue
+
+            if event == "typing":
+                await _relay_typing(user_id, msg.get("conversationId"))
                 continue
     except WebSocketDisconnect:
         pass
@@ -71,6 +76,46 @@ async def websocket_endpoint(ws: WebSocket, token: str = Query(...)) -> None:
         # 只有在這個人所有分頁都關掉之後才算離線
         if not hub.is_online(user_id):
             await _notify_presence(user_id, "offline")
+
+
+async def _relay_typing(user_id: str, conversation_id: str | None) -> None:
+    """
+    轉發「正在輸入」給同一個對話的其他成員。
+
+    刻意不寫進資料庫 —— 這種訊號一秒可能來好幾次，而且過期就沒有意義。
+    每次都要確認發送者確實是成員，否則猜到 conversation id
+    就能對別人的對話發假訊號。
+    """
+    if not conversation_id:
+        return
+
+    from sqlalchemy import select
+
+    from app.models import ConversationMember, User
+
+    async with SessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(ConversationMember.user_id).where(
+                    ConversationMember.conversation_id == conversation_id
+                )
+            )
+        ).all()
+        member_ids = [r[0] for r in rows]
+
+        if user_id not in member_ids:
+            return
+
+        sender = await db.get(User, user_id)
+        name = sender.display_name if sender else ""
+
+    others = [uid for uid in member_ids if uid != user_id]
+    if others:
+        await hub.broadcast(
+            others,
+            "typing",
+            {"conversationId": conversation_id, "userId": user_id, "displayName": name},
+        )
 
 
 async def _mark_seen(user_id: str) -> None:

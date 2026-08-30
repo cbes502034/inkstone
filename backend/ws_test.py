@@ -139,6 +139,34 @@ async def main() -> int:
                 str(msg)[:150],
             )
 
+            print("\n— 正在輸入 —")
+            await bws.send(
+                json.dumps({"event": "typing", "conversationId": conv_id})
+            )
+            # 自己送的訊號不該回彈到自己身上
+            echo = await collect(bws, "typing", timeout=2.0)
+            check("自己的輸入訊號不會回彈", echo is None, str(echo)[:120])
+
+            async with websockets.connect(f"{WS}?token={alice['accessToken']}") as aws:
+                await aws.send(
+                    json.dumps({"event": "typing", "conversationId": conv_id})
+                )
+                msg = await collect(bws, "typing")
+                check(
+                    "對方的輸入訊號即時送達",
+                    msg is not None and msg["data"]["conversationId"] == conv_id,
+                    str(msg)[:150],
+                )
+
+                # 猜到 conversation id 也不能對別人的對話發假訊號
+                await aws.send(
+                    json.dumps(
+                        {"event": "typing", "conversationId": "not-a-real-conversation"}
+                    )
+                )
+                bogus = await collect(bws, "typing", timeout=2.0)
+                check("非成員的對話不會轉發", bogus is None, str(bogus)[:120])
+
         print("\n— 驗證 —")
         try:
             async with websockets.connect(f"{WS}?token=not-a-real-token"):
