@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import Integer, case, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import DbSession, OptionalUser
-from app.models import Post, PostLike, PostTag, User
+from app.models import Block, Post, PostLike, PostTag, User
 from app.schemas.post import SearchOut
 from app.services.serializers import post_out, user_public
 
@@ -20,20 +20,28 @@ async def search(
     """
     搜文章與找人。
 
-    比對一律轉小寫再比，不用 ILIKE —— 那是 Postgres 專屬語法，
-    本機 SQLite 會直接壞掉。func.lower() 兩邊都能跑。
+    比對一律轉小寫，不用 ILIKE —— 那是 Postgres 專屬語法，本機 SQLite 會壞掉。
+    正式環境有 pg_trgm 的三元組索引在 lower(...) 上加速這些查詢
+    （見 migration a1b2c3d4e5f6，那裡也說明了為什麼不用 tsvector）。
 
-    待辦：資料量大之後要換成全文檢索（Postgres 的 tsvector），
-    目前的 LIKE '%...%' 走不到索引。
+    排序不是單純照時間：標籤精準命中最相關，其次標題，最後才是內文。
+    只照時間排的話，一篇剛發的文章只因為內文提到一次關鍵字，
+    就會壓過標題完全命中的舊文章。
     """
     needle = q.strip().lower()
     pattern = f"%{needle}%"
 
-    # 標籤精準命中，或標題內文模糊命中
     tag_hits = select(PostTag.post_id).where(PostTag.tag == needle)
 
+    # 相關性分數：數字越小越前面
+    relevance = case(
+        (Post.id.in_(tag_hits), 0),
+        (func.lower(Post.title).like(pattern), 1),
+        else_=2,
+    ).label("relevance")
+
     post_stmt = (
-        select(Post)
+        select(Post, relevance)
         .options(selectinload(Post.author))
         .where(
             or_(
@@ -42,32 +50,52 @@ async def search(
                 Post.id.in_(tag_hits),
             )
         )
-        .order_by(Post.created_at.desc())
+        .order_by(relevance.asc(), Post.created_at.desc())
         .limit(limit)
     )
-    posts = list((await db.execute(post_stmt)).scalars().all())
+    posts = [row[0] for row in (await db.execute(post_stmt)).all()]
 
+    # 被封鎖的雙方互相看不到對方 —— 封鎖之後還能在搜尋結果撞見，
+    # 那個功能就等於沒用
+    user_conditions = [
+        User.is_active.is_(True),
+        or_(
+            func.lower(User.display_name).like(pattern),
+            func.lower(User.username).like(pattern),
+        ),
+    ]
+    if viewer:
+        blocked_pairs = select(Block.blocked_id).where(Block.blocker_id == viewer.id)
+        blocked_me = select(Block.blocker_id).where(Block.blocked_id == viewer.id)
+        user_conditions += [
+            User.id != viewer.id,
+            User.id.not_in(blocked_pairs),
+            User.id.not_in(blocked_me),
+        ]
+
+    # 帳號完全相同的排最前面，其次才是部分命中
+    exact_first = case(
+        (func.lower(User.username) == needle, 0),
+        (func.lower(User.display_name) == needle, 1),
+        else_=2,
+    )
     user_stmt = (
         select(User)
-        .where(
-            User.is_active.is_(True),
-            or_(
-                func.lower(User.display_name).like(pattern),
-                func.lower(User.username).like(pattern),
-            ),
-        )
+        .where(*user_conditions)
+        .order_by(exact_first.asc(), User.username.asc())
         .limit(limit)
     )
-    users = [u for u in (await db.execute(user_stmt)).scalars().all()]
-    if viewer:
-        users = [u for u in users if u.id != viewer.id]
+    users = list((await db.execute(user_stmt)).scalars().all())
 
     # 一次撈齊標籤與按讚狀態，避免每篇各查一次
     ids = [p.id for p in posts]
-    tag_rows = await db.execute(select(PostTag.post_id, PostTag.tag).where(PostTag.post_id.in_(ids)))
     tags: dict[str, list[str]] = {}
-    for pid, tag in tag_rows.all():
-        tags.setdefault(pid, []).append(tag)
+    if ids:
+        rows = await db.execute(
+            select(PostTag.post_id, PostTag.tag).where(PostTag.post_id.in_(ids))
+        )
+        for pid, tag in rows.all():
+            tags.setdefault(pid, []).append(tag)
 
     liked: set[str] = set()
     if viewer and ids:
