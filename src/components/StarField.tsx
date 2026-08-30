@@ -742,7 +742,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
     /** 太陽的位置。光芒從這裡放射出去，跟畫面上那團暖光是同一個光源 */
     function sunPos(): [number, number] {
-      return [width * 0.82, height * 0.06]
+      // 跟月亮同一個位置。日與夜是同一片天空的兩個時刻，
+      // 光源的位置不該跟著換
+      return [width * 0.82, height * 0.13]
     }
 
     /**
@@ -764,7 +766,7 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
      */
     function spawnRays() {
       // 一次六到十道，角度散開成一束
-      const count = 6 + Math.floor(Math.random() * 5)
+      const count = 7 + Math.floor(Math.random() * 5)
       // 太陽在右上，光芒往左下灑。中心方向大約是 135°
       const center = Math.PI * 0.72 + (Math.random() - 0.5) * 0.5
       const fan = 0.55 + Math.random() * 0.5
@@ -773,8 +775,8 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         rays.push({
           angle: center + (i / (count - 1) - 0.5) * fan + (Math.random() - 0.5) * 0.06,
           // 粗細差距要大。全部一樣粗會像梳子，有粗有細才像光
-          spread: 0.006 + Math.random() * 0.032,
-          length: Math.hypot(width, height) * (0.7 + Math.random() * 0.7),
+          spread: 0.008 + Math.random() * 0.046,
+          length: Math.hypot(width, height) * (1.1 + Math.random() * 0.6),
           life: -i * (25 + Math.random() * 45),
           ttl: 620 + Math.random() * 460,
           weight: 0.45 + Math.random() * 0.55,
@@ -801,41 +803,59 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
       const dx = cx - sx
       const dy = cy - sy
 
-      // 每一顆的位置（沿連線的比例）、大小、亮度。
-      // 疏密不均才自然，等距排開會像一串珠子
-      const spots: Array<[number, number, number]> = [
-        [0.42, 9, 0.5],
-        [0.6, 15, 0.34],
-        [0.78, 6, 0.6],
-        [1.0, 22, 0.26],
-        [1.26, 11, 0.4],
-        [1.52, 7, 0.5],
+      // 每一顆的位置（沿連線的比例）、大小、亮度、幾邊形。
+      // 疏密不均才自然，等距排開會像一串珠子。
+      //
+      // 六邊形來自光圈的葉片 —— 多數鏡頭是六片，所以光斑就是六邊形。
+      // 菱形則是葉片閉得比較小時的樣子。兩種混在一起才像真的鏡頭，
+      // 全部同一種形狀反而會露出是畫出來的。
+      const spots: Array<[number, number, number, number]> = [
+        [0.36, 10, 0.55, 6],
+        [0.54, 17, 0.4, 4],
+        [0.72, 7, 0.7, 6],
+        [0.92, 25, 0.32, 6],
+        [1.14, 12, 0.5, 4],
+        [1.36, 9, 0.6, 6],
+        [1.58, 15, 0.36, 6],
       ]
 
-      for (const [k, size, w] of spots) {
+      for (const [k, size, w, sides] of spots) {
         const x = sx + dx * k
         const y = sy + dy * k
         // 每顆各自緩慢地明滅，不會整串同步
         const shimmer = 0.7 + 0.3 * Math.sin(now * 0.0016 + k * 9)
-        const a = 0.13 * fade * w * shimmer
+        const a = 0.3 * fade * w * shimmer
         if (a < 0.004) continue
 
         ctx.save()
         ctx.translate(x, y)
-        // 菱形的長軸順著光軸 —— 光暈是沿著那條線被拉開的
+        // 長軸順著光軸 —— 光暈是沿著那條線被拉開的
         ctx.rotate(Math.atan2(dy, dx))
 
-        const g = ctx.createLinearGradient(-size, 0, size, 0)
-        g.addColorStop(0, `rgba(255, 238, 170, 0)`)
-        g.addColorStop(0.5, `rgba(255, 243, 186, ${a})`)
-        g.addColorStop(1, `rgba(255, 238, 170, 0)`)
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size)
+        g.addColorStop(0, `rgba(255, 248, 206, ${a})`)
+        g.addColorStop(0.6, `rgba(255, 240, 176, ${a * 0.6})`)
+        g.addColorStop(1, 'rgba(255, 238, 170, 0)')
         ctx.fillStyle = g
 
         ctx.beginPath()
-        ctx.moveTo(-size, 0)
-        ctx.lineTo(0, -size * 0.42)
-        ctx.lineTo(size, 0)
-        ctx.lineTo(0, size * 0.42)
+        if (sides === 4) {
+          // 菱形：長軸壓扁，順著光軸拉開
+          ctx.moveTo(-size, 0)
+          ctx.lineTo(0, -size * 0.42)
+          ctx.lineTo(size, 0)
+          ctx.lineTo(0, size * 0.42)
+        } else {
+          // 六邊形：轉一點角度，不要每顆都同一個朝向
+          const turn = k * 1.7
+          for (let i = 0; i < 6; i++) {
+            const ang = turn + (i / 6) * Math.PI * 2
+            const px = Math.cos(ang) * size
+            const py = Math.sin(ang) * size * 0.82
+            if (i === 0) ctx.moveTo(px, py)
+            else ctx.lineTo(px, py)
+          }
+        }
         ctx.closePath()
         ctx.fill()
         ctx.restore()
@@ -853,6 +873,15 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
 
       const [sx, sy] = sunPos()
 
+      // 光用疊加模式畫。source-over 是「在上面塗一層顏料」，
+      // 顏色再濃也只是把底下染黃；lighter 是「把光加上去」，
+      // 那才是光該有的行為 —— 亮的地方更亮，而且不會把字蓋掉，
+      // 因為深色的字加上一點光還是深色。
+      //
+      // 這也解掉了「要很強」與「不能遮住文字」的矛盾：
+      // 用顏料達成強度一定會擋字，用光就不會。
+      ctx.globalCompositeOperation = 'lighter'
+
       rays = rays.filter((r) => {
         r.life += 16
         if (r.life < 0) return true // 還沒輪到它亮
@@ -862,16 +891,32 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         // 快亮、慢滅。閃光就是這個形狀 —— 平均的淡入淡出會像在呼吸
         const fade = t < 0.16 ? t / 0.16 : (1 - t) / 0.84
 
-        // 顏色壓得很淡。太陽光本來就不該有明確的顏色 ——
-        // 一旦看得出「那是一片黃色」，畫面立刻變髒變亂
-        const a = 0.16 * fade * r.weight
+        // 明滅：每一道各自的相位與頻率，同一束裡的強度不會整齊劃一。
+        // 真實的光芒會因為空氣裡的塵埃而閃動
+        const shimmer = 0.72 + 0.28 * Math.sin(r.angle * 37 + now * 0.006)
+
+        // 亮度要足以讓人看見光芒橫過整個畫面，但存在感必須靠「範圍」
+        // 而不是「濃度」—— 沿長度拉得夠遠、邊緣化得夠開，
+        // 單點的透明度不高，整道還是很有份量。
+        // 做成實心的黃色塊反而會擋住底下的字。
+        // 這個值刻意拉高。要讓人看見「光射穿整個畫面」，
+        // 亮度就必須夠 —— 淡到只剩暗示的話，那不叫射線。
+        //
+        // 可讀性算過：白卡片（#fff）疊上這個淡黃之後底色約是
+        // (255, 246, 221)，而文字是接近黑的深藍 —— 對比幾乎不變。
+        // 會擋住字的是「深色或高彩度的實心塊」，不是淺色的光。
+        const a = 0.95 * fade * r.weight * shimmer
 
         const g = ctx.createLinearGradient(sx, sy,
           sx + Math.cos(r.angle) * r.length,
           sy + Math.sin(r.angle) * r.length)
-        g.addColorStop(0, `rgba(255, 240, 176, ${a})`)
-        g.addColorStop(0.35, `rgba(255, 236, 168, ${a * 0.7})`)
-        g.addColorStop(1, 'rgba(255, 238, 180, 0)')
+        // 前面九成幾乎不衰減，最後才收掉。
+        // 中途就淡光的話會變成「一小段光暈」而不是「射穿」
+        g.addColorStop(0, `rgba(255, 236, 150, ${a})`)
+        g.addColorStop(0.32, `rgba(255, 228, 128, ${a * 0.97})`)
+        g.addColorStop(0.66, `rgba(255, 222, 116, ${a * 0.9})`)
+        g.addColorStop(0.9, `rgba(255, 226, 130, ${a * 0.58})`)
+        g.addColorStop(1, 'rgba(255, 244, 192, 0)')
         ctx.fillStyle = g
 
         // 一道楔形：從太陽的一個點往外張開
@@ -897,6 +942,9 @@ export function StarField({ layer = 'sky' }: { layer?: 'sky' | 'butterflies' } =
         const lt = Math.max(0, lead.life) / lead.ttl
         drawFlares(now, lt < 0.16 ? lt / 0.16 : (1 - lt) / 0.84)
       }
+
+      // 還給主迴圈，不要把疊加模式留成別人的副作用
+      ctx.globalCompositeOperation = 'source-over'
     }
 
     function buildClouds() {
