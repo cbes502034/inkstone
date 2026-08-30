@@ -210,7 +210,6 @@ export function ResetPassword() {
           onChange={(e) => setPassword(e.target.value)}
           hint="至少 8 個字"
           autoComplete="new-password"
-          placeholder="••••••••"
           autoFocus
         />
         <Field
@@ -220,7 +219,6 @@ export function ResetPassword() {
           onChange={(e) => setConfirm(e.target.value)}
           error={mismatch ? '兩次輸入的密碼不一致' : undefined}
           autoComplete="new-password"
-          placeholder="••••••••"
         />
 
         {submit.isError && (

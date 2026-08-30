@@ -84,7 +84,6 @@ export function Login() {
           value={account}
           onChange={(e) => setAccount(e.target.value)}
           autoComplete="username"
-          placeholder="guanwen"
         />
         <Field
           label="密碼"
@@ -92,7 +91,6 @@ export function Login() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
-          placeholder="••••••••"
         />
 
         {submit.isError && (

@@ -122,7 +122,6 @@ export function Register() {
           value={username}
           onChange={(e) => setUsername(e.target.value.replace(/[^a-zA-Z0-9_]/g, ''))}
           hint="英數字和底線，3 個字以上，設定後不能更改"
-          placeholder="guanwen"
           autoComplete="username"
           autoFocus
         />
@@ -275,7 +274,6 @@ export function RegisterVerify() {
           onChange={(e) => setPassword(e.target.value)}
           hint="至少 8 個字"
           autoComplete="new-password"
-          placeholder="••••••••"
           autoFocus
         />
         <Field
@@ -285,7 +283,6 @@ export function RegisterVerify() {
           onChange={(e) => setConfirm(e.target.value)}
           error={mismatch ? '兩次輸入的密碼不一致' : undefined}
           autoComplete="new-password"
-          placeholder="••••••••"
         />
 
         {submit.isError && (
