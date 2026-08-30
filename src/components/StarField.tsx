@@ -26,6 +26,14 @@ interface Glow {
   spike: boolean
 }
 
+/** 一個星座：把幾顆相鄰的亮星連起來的一條折線 */
+interface Constellation {
+  /** 依序連起來的星星在 glows 裡的索引 */
+  path: number[]
+  /** 各自的呼吸相位，讓每個星座明滅的時機不同 */
+  phase: number
+}
+
 interface Shooting {
   x: number
   y: number
@@ -672,6 +680,7 @@ export function StarField({
     let dpr = 1
     let dust: HTMLCanvasElement | null = null
     let glows: Glow[] = []
+    let constellations: Constellation[] = []
     let shooting: Shooting | null = null
     let raf = 0
     let running = true
@@ -853,10 +862,17 @@ export function StarField({
       // 全部同一種形狀反而會露出是畫出來的。
       // 只留靠近太陽的幾顆。整條光軸排滿光斑會把視線一路拉到
       // 畫面另一端，那是攝影作品的語彙，不是一個安靜的閱讀介面
+      // 大顆。小小幾點會被當成髒污或雜訊 ——
+      // 鏡頭光暈之所以好看，一部分就來自那幾顆佔了畫面一小塊的大光斑。
+      // 沿光軸走得遠一點，畫面各處都會出現
       const spots: Array<[number, number, number, number]> = [
-        [0.2, 8, 0.5, 6],
-        [0.32, 13, 0.34, 4],
-        [0.46, 6, 0.55, 6],
+        [0.16, 26, 0.5, 6],
+        [0.3, 48, 0.3, 4],
+        [0.44, 20, 0.55, 6],
+        [0.62, 72, 0.22, 6],
+        [0.84, 34, 0.4, 4],
+        [1.08, 90, 0.18, 6],
+        [1.32, 40, 0.34, 6],
       ]
 
       for (const [k, size, w, sides] of spots) {
@@ -1129,6 +1145,7 @@ export function StarField({
         height = 0
         dust = null
         glows = []
+        constellations = []
         butterflies = []
         return
       }
@@ -1142,6 +1159,7 @@ export function StarField({
 
       dust = buildDust()
       buildClouds()
+      if (isDark) buildConstellations()
 
       // 尺寸跟著畫面走，小螢幕上不要出現一顆佔掉半邊天的月亮。
       // 但下限要夠大 —— 太小的話不論怎麼畫都只會被當成星星
@@ -1164,6 +1182,68 @@ export function StarField({
           spike: depth > 0.86,
         }
       })
+    }
+
+    /**
+     * 挑幾個星座出來。
+     *
+     * 作法是：隨機選一顆亮星當起點，然後一路找「還沒用過、而且距離
+     * 落在某個範圍內」的鄰居接下去。距離要設下限也要設上限 ——
+     * 太近的兩顆連起來看不出是線，太遠的則會橫跨半個畫面，
+     * 不像星座像蜘蛛網。
+     *
+     * 形狀完全交給星星本來的分布決定，不預先畫好圖案。真實的星座
+     * 也是這樣來的：先有星星，人再把看起來有關係的連起來。
+     */
+    function buildConstellations() {
+      constellations = []
+      if (glows.length < 12) return
+
+      const used = new Set<number>()
+      const minD = Math.min(width, height) * 0.06
+      const maxD = Math.min(width, height) * 0.2
+      const count = 2 + Math.floor(Math.random() * 3)
+
+      for (let c = 0; c < count; c++) {
+        // 起點挑亮一點的星，暗星連起來根本看不到
+        let seed = -1
+        for (let tries = 0; tries < 30; tries++) {
+          const i = Math.floor(Math.random() * glows.length)
+          if (!used.has(i) && glows[i].alpha > 0.45) {
+            seed = i
+            break
+          }
+        }
+        if (seed < 0) continue
+
+        const path = [seed]
+        used.add(seed)
+        const links = 3 + Math.floor(Math.random() * 4)
+
+        for (let k = 0; k < links; k++) {
+          const from = glows[path[path.length - 1]]
+          let best = -1
+          let bestD = Infinity
+
+          for (let i = 0; i < glows.length; i++) {
+            if (used.has(i)) continue
+            const d = Math.hypot(glows[i].x - from.x, glows[i].y - from.y)
+            if (d < minD || d > maxD) continue
+            if (d < bestD) {
+              bestD = d
+              best = i
+            }
+          }
+          if (best < 0) break
+          path.push(best)
+          used.add(best)
+        }
+
+        // 兩顆連不成星座
+        if (path.length >= 3) {
+          constellations.push({ path, phase: Math.random() * Math.PI * 2 })
+        }
+      }
     }
 
     function spawnShooting() {
@@ -1574,6 +1654,22 @@ export function StarField({
 
     let dustOffset = 0
 
+    /**
+     * 整片星空的緩慢位移。
+     *
+     * 用兩條週期很長的正弦（約九十秒與兩分半）疊出來，而不是持續往
+     * 一個方向飄 —— 持續飄的話要處理繞回邊界，而繞回時星座的連線
+     * 會被拉成橫跨整個畫面的長條。擺動就沒有這個問題，
+     * 而且慢到讓人不會察覺它在動，只覺得天空是活的。
+     */
+    function skyDrift(now: number): [number, number] {
+      if (reduced) return [0, 0]
+      return [
+        Math.sin(now * 0.00007) * 14 + Math.sin(now * 0.000041) * 8,
+        Math.cos(now * 0.00005) * 9 + Math.sin(now * 0.000033) * 5,
+      ]
+    }
+
     function draw(now: number) {
       // 尺寸還是 0 就先不畫，等 ResizeObserver 通知有尺寸了再重建
       if (width < 1 || height < 1) {
@@ -1647,6 +1743,27 @@ export function StarField({
         ctx.drawImage(dust, 0, dustOffset - height, width, height)
       }
 
+      const [driftX, driftY] = skyDrift(now)
+
+      // 星座的連線先畫，才會在星星後面 —— 線壓在星點上會蓋掉光暈
+      if (isDark && constellations.length > 0) {
+        ctx.lineWidth = 0.7
+        for (const c of constellations) {
+          // 很慢地明滅。一直亮著會變成畫在天上的圖表，
+          // 若隱若現才像是「剛好看出來的形狀」
+          const breathe = reduced ? 0.5 : 0.34 + 0.3 * Math.sin(now * 0.0004 + c.phase)
+          ctx.strokeStyle = `rgba(${starRGB}, ${0.16 * breathe * baseAlpha})`
+          ctx.beginPath()
+          for (let i = 0; i < c.path.length; i++) {
+            const g = glows[c.path[i]]
+            if (!g) continue
+            if (i === 0) ctx.moveTo(g.x + driftX, g.y + driftY)
+            else ctx.lineTo(g.x + driftX, g.y + driftY)
+          }
+          ctx.stroke()
+        }
+      }
+
       for (const s of glows) {
         const twinkle = reduced
           ? 1
@@ -1654,12 +1771,14 @@ export function StarField({
         const a = s.alpha * twinkle * baseAlpha
         if (a <= 0.01) continue
 
+        const gx = s.x + driftX
+        const gy = s.y + driftY
         ctx.globalAlpha = a
-        ctx.drawImage(sprite, s.x - s.size / 2, s.y - s.size / 2, s.size, s.size)
+        ctx.drawImage(sprite, gx - s.size / 2, gy - s.size / 2, s.size, s.size)
 
         if (s.spike && isDark) {
           ctx.globalAlpha = 1
-          drawSpike(s.x, s.y, s.size * 1.5, a * 0.5)
+          drawSpike(gx, gy, s.size * 1.5, a * 0.5)
         }
       }
 
