@@ -7,11 +7,10 @@ import re
 
 from fastapi import HTTPException, status
 from PIL import Image, UnidentifiedImageError
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models import MediaObject
+from app.services import storage
 
 _DATA_URL = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,(.+)$", re.DOTALL)
 
@@ -72,32 +71,18 @@ def _normalize(data_url: str) -> bytes:
 
 
 async def store_avatar(db: AsyncSession, data_url: str) -> str:
-    """處理頭像並存進 media 表，回傳可以放進 avatar_url 的網址。"""
+    """
+    處理頭像並存起來，回傳可以放進 avatar_url 的網址。
+
+    位元組實際落在哪裡由 storage 決定（資料庫或物件儲存），
+    這裡不需要知道 —— 換儲存方式不必動這支。
+    """
     # 客戶端把原本的網址原封不動送回來時（例如整包 PATCH 回來），
-    # 那不是新圖，直接沿用，不要當成格式錯誤擋下來
-    if data_url.startswith(MEDIA_PREFIX):
+    # 那不是新圖，直接沿用，不要當成格式錯誤擋下來。
+    # http 開頭的情況是圖片已經在物件儲存上。
+    if data_url.startswith(MEDIA_PREFIX) or data_url.startswith("http"):
         return data_url
 
     blob = await asyncio.to_thread(_normalize, data_url)
     digest = hashlib.sha256(blob).hexdigest()
-
-    # 同一張圖已經有人上傳過就直接共用，不重複佔空間
-    if await db.get(MediaObject, digest) is None:
-        try:
-            # 包在 savepoint 裡：兩個人同一瞬間上傳同一張圖時，
-            # 後到的那個會撞主鍵。有 savepoint 才能只回滾這一小段，
-            # 不會把外層交易一起弄髒（那會連帶讓註冊或改資料整個失敗）。
-            async with db.begin_nested():
-                db.add(
-                    MediaObject(
-                        id=digest,
-                        content_type=_CONTENT_TYPE,
-                        byte_size=len(blob),
-                        data=blob,
-                    )
-                )
-        except IntegrityError:
-            # 對方已經寫進去了，內容一模一樣，直接沿用
-            pass
-
-    return f"{MEDIA_PREFIX}{digest}.webp"
+    return await storage.put(db, digest, _CONTENT_TYPE, blob)

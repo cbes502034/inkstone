@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.services import ai as ai_service
+from app.services import storage as storage_service
 from app.db.base import Base
 from app.db.session import engine
 
@@ -143,6 +144,12 @@ async def health() -> dict:
         "email": settings.email_provider,
         "database": "postgres" if not settings.is_sqlite else "sqlite",
         "redis": bool(settings.REDIS_URL),
+        # 圖片位元組放資料庫還是物件儲存。兩者對外行為一致，
+        # 但放資料庫會吃掉 500 MB 的容量額度，部署後值得確認一下
+        "storage": settings.storage_provider,
+        # 設定了物件儲存卻寫入失敗時的代碼。有值代表圖片其實還在往
+        # 資料庫裡堆 —— 功能看起來正常，容量卻默默長在不該長的地方
+        "storageLastError": storage_service.last_failure_code(),
         "ai": "huggingface" if settings.HF_TOKEN else "local",
         # 模型呼叫最近一次失敗的「代碼」—— 狀態碼或例外類別名，不含訊息內文。
         # 只有代碼是刻意的：401/402/404/逾時各自對應完全不同的原因，

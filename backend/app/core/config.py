@@ -63,7 +63,15 @@ class Settings(BaseSettings):
     # 啟動時若在 prod 仍是預設值會直接拒絕啟動（見下方驗證）。
     JWT_SECRET: str = "dev-only-insecure-secret-change-me"
     JWT_ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_TTL_MINUTES: int = 15
+    # access 一小時、refresh 一個月。
+    #
+    # access 敢放到一小時，是因為登出時會把它寫進撤銷名單、立刻失效 ——
+    # 短 TTL 的傳統理由是「token 發出去就收不回來」，那個前提在這裡不成立。
+    #
+    # refresh 一個月換來的是使用者不必反覆登入。代價是被偷走的那張
+    # 可以用滿一個月：我們沒有做輪替加重放偵測（多分頁會互相踢掉），
+    # 也還沒做「改密碼就讓所有既有 session 失效」。後者是目前最該補的一項。
+    ACCESS_TOKEN_TTL_MINUTES: int = 60
     REFRESH_TOKEN_TTL_DAYS: int = 30
 
     # --- CORS ---
@@ -74,6 +82,14 @@ class Settings(BaseSettings):
     # 沒設定就退回程序內記憶體，本機開發不必先開 Upstash 帳號。
     REDIS_URL: str | None = None
     AI_SESSION_TTL_SECONDS: int = 60 * 60  # 一小時沒動作就清掉
+
+    # --- 物件儲存（選填）---
+    # 沒設定就把圖片位元組留在資料庫，功能完全一樣，只是佔用資料庫容量。
+    # Supabase 免費方案的資料庫是 500 MB，而 Storage 另外給 1 GB ——
+    # 把圖片挪出去等於把可用空間放大一倍以上，而且資料庫備份也會小很多。
+    SUPABASE_URL: str | None = None
+    SUPABASE_SERVICE_KEY: str | None = None
+    SUPABASE_BUCKET: str = "media"
 
     # --- Hugging Face ---
     HF_TOKEN: str | None = None
@@ -175,6 +191,18 @@ class Settings(BaseSettings):
         return "none"
 
     @property
+    def storage_provider(self) -> str:
+        """
+        圖片位元組放哪裡。
+
+        兩者的對外行為一致 —— 呼叫端拿到的都是一個網址，
+        差別只在位元組實際落在資料庫還是物件儲存。
+        """
+        if self.SUPABASE_URL and self.SUPABASE_SERVICE_KEY:
+            return "supabase"
+        return "database"
+
+    @property
     def is_pgbouncer(self) -> bool:
         """
         是否連到連線池（Supabase 的 pooler）。
@@ -185,6 +213,15 @@ class Settings(BaseSettings):
         """
         url = self.database_url
         return "pooler.supabase.com" in url or ":6543" in url
+
+    @field_validator("SUPABASE_URL", "SUPABASE_SERVICE_KEY", mode="before")
+    @classmethod
+    def _trim_storage(cls, v):
+        """同樣去掉貼上時夾帶的空白。網址結尾的斜線也一併去掉，避免組出雙斜線。"""
+        if isinstance(v, str):
+            v = v.strip().rstrip("/")
+            return v or None
+        return v
 
     @field_validator("HF_TOKEN", "HF_TEXT_MODEL", mode="before")
     @classmethod
