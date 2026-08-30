@@ -1,29 +1,40 @@
+import asyncio
 import base64
 import binascii
+import hashlib
 import io
 import re
 
 from fastapi import HTTPException, status
 from PIL import Image, UnidentifiedImageError
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models import MediaObject
 
 _DATA_URL = re.compile(r"^data:image/(png|jpeg|jpg|webp|gif);base64,(.+)$", re.DOTALL)
 
+# 圖片一律轉成 WebP：同樣畫質下比 JPEG 小三成左右，而且支援度已經夠廣
+_CONTENT_TYPE = "image/webp"
 
-def store_avatar(data_url: str) -> str:
+# 網址前綴。內容雜湊當檔名，所以同一個網址永遠對應同一張圖
+MEDIA_PREFIX = "/api/v1/media/"
+
+
+def _normalize(data_url: str) -> bytes:
     """
-    處理前端送來的頭像。
+    把前端送來的 data URL 轉成乾淨的 WebP 位元組。
 
     前端已經壓過一次，但後端一定要自己再驗一次 —— 前端的檢查只是為了體驗，
     擋不住直接打 API 的人。這裡做三件事：
       1. 確認真的是圖片（用實際解碼，不是看副檔名或 MIME 字串）
       2. 限制大小，避免有人塞一張 200MB 的圖進來
-      3. 重新編碼成 WebP，順便剝掉 EXIF —— 手機拍的照片會夾帶 GPS 座標，
+      3. 重新編碼，順便剝掉 EXIF —— 手機拍的照片會夾帶 GPS 座標，
          直接存下來等於把使用者的所在位置公開出去
 
-    目前回傳 data URL 直接存欄位。接上物件儲存（Supabase Storage）之後，
-    這裡改成上傳並回傳網址，呼叫端不需要改。
+    純 CPU 工作，由呼叫端丟到執行緒跑。解一張圖大概幾十毫秒，
+    直接在事件迴圈裡做的話，這段時間全站所有請求都會被卡住。
     """
     match = _DATA_URL.match(data_url.strip())
     if not match:
@@ -57,5 +68,36 @@ def store_avatar(data_url: str) -> str:
     except (UnidentifiedImageError, OSError) as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "這個檔案不是有效的圖片") from e
 
-    encoded = base64.b64encode(out.getvalue()).decode()
-    return f"data:image/webp;base64,{encoded}"
+    return out.getvalue()
+
+
+async def store_avatar(db: AsyncSession, data_url: str) -> str:
+    """處理頭像並存進 media 表，回傳可以放進 avatar_url 的網址。"""
+    # 客戶端把原本的網址原封不動送回來時（例如整包 PATCH 回來），
+    # 那不是新圖，直接沿用，不要當成格式錯誤擋下來
+    if data_url.startswith(MEDIA_PREFIX):
+        return data_url
+
+    blob = await asyncio.to_thread(_normalize, data_url)
+    digest = hashlib.sha256(blob).hexdigest()
+
+    # 同一張圖已經有人上傳過就直接共用，不重複佔空間
+    if await db.get(MediaObject, digest) is None:
+        try:
+            # 包在 savepoint 裡：兩個人同一瞬間上傳同一張圖時，
+            # 後到的那個會撞主鍵。有 savepoint 才能只回滾這一小段，
+            # 不會把外層交易一起弄髒（那會連帶讓註冊或改資料整個失敗）。
+            async with db.begin_nested():
+                db.add(
+                    MediaObject(
+                        id=digest,
+                        content_type=_CONTENT_TYPE,
+                        byte_size=len(blob),
+                        data=blob,
+                    )
+                )
+        except IntegrityError:
+            # 對方已經寫進去了，內容一模一樣，直接沿用
+            pass
+
+    return f"{MEDIA_PREFIX}{digest}.webp"

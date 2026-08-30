@@ -39,11 +39,28 @@ export function letterAvatar(id: string, displayName: string): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
 }
 
+/**
+ * 後端回傳的是 /api/v1/media/... 這種相對路徑，
+ * 但圖片在 API 那一台，前端是另一個站台，所以要補上來源。
+ * 從 VITE_API_BASE_URL 推出去，不必再多設一個環境變數。
+ */
+const API_ORIGIN = (() => {
+  const base = import.meta.env.VITE_API_BASE_URL
+  if (!base) return ''
+  try {
+    return new URL(base, window.location.origin).origin
+  } catch {
+    return ''
+  }
+})()
+
 /** 頭像來源：使用者上傳的優先，沒有就退回文字頭像 */
 export function avatarSrc(user: {
   id: string
   displayName: string
   avatarUrl: string | null
 }): string {
-  return user.avatarUrl ?? letterAvatar(user.id, user.displayName)
+  const url = user.avatarUrl
+  if (!url) return letterAvatar(user.id, user.displayName)
+  return url.startsWith('/') ? API_ORIGIN + url : url
 }

@@ -14,6 +14,7 @@ from app.api.v1.endpoints import (
     comments,
     conversations,
     friends,
+    media,
     notifications,
     posts,
     reports,
@@ -32,6 +33,7 @@ api_router.include_router(friends.router)
 api_router.include_router(conversations.router)
 api_router.include_router(notifications.router)
 api_router.include_router(reports.router)
+api_router.include_router(media.router)  # 圖片本體，公開且長期快取
 api_router.include_router(search.router)
 api_router.include_router(ai.router)
 api_router.include_router(ws.router)  # WebSocket：通知、訊息、上線狀態

@@ -14,6 +14,7 @@ from app.models.chat import (
     Notification,
     NotificationKind,
 )
+from app.models.media import MediaObject
 from app.models.pending import PasswordReset, PendingRegistration
 from app.models.post import Post, PostLike, PostTag
 from app.models.social import (
@@ -28,6 +29,7 @@ from app.models.user import User
 
 __all__ = [
     "User",
+    "MediaObject",
     "PendingRegistration",
     "PasswordReset",
     "Post",

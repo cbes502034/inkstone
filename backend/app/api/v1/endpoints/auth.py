@@ -182,7 +182,7 @@ async def register_complete(payload: RegisterCompleteIn, db: DbSession) -> AuthS
         # 還沒讓使用者取顯示名稱，先用帳號，之後可以在個人資料改
         display_name=pending.username,
         email_verified=True,
-        avatar_url=store_avatar(payload.avatarDataUrl) if payload.avatarDataUrl else None,
+        avatar_url=await store_avatar(db, payload.avatarDataUrl) if payload.avatarDataUrl else None,
     )
     db.add(user)
 

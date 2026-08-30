@@ -52,7 +52,7 @@ async def update_me(payload: UpdateMeIn, db: DbSession, me: CurrentUser) -> User
     if payload.showPresence is not None:
         me.show_presence = payload.showPresence
     if payload.avatarUrl is not None:
-        me.avatar_url = store_avatar(payload.avatarUrl) if payload.avatarUrl else None
+        me.avatar_url = await store_avatar(db, payload.avatarUrl) if payload.avatarUrl else None
 
     await db.flush()
     return _private(me)

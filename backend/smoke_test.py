@@ -8,11 +8,16 @@
     .venv/Scripts/python.exe smoke_test.py
 """
 
+import base64
+import hashlib
+import io
 import os
+import re
 import sys
 import uuid
 
 import httpx
+from PIL import Image
 
 # 預設打本機；要驗證正式環境就傳網址進來：
 #     python smoke_test.py https://<你的後端>/api/v1
@@ -406,6 +411,48 @@ def main() -> int:
 
     r = c.get(f"/users/{eve['user']['username']}", headers=a_tok)
     check("解除後狀態回復", r.json()["friendState"] == "none", r.text[:150])
+    print("\n— 頭像與圖片儲存 —")
+
+    def _data_url(color):
+        img = Image.new("RGB", (300, 220), color)  # 刻意非正方形，驗證會被裁切
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+
+    r = c.patch("/users/me", headers=a_tok, json={"avatarUrl": _data_url((40, 90, 200))})
+    check("上傳頭像", r.status_code == 200, r.text[:150])
+    avatar_url = r.json().get("avatarUrl") or ""
+    check("回傳的是網址不是 data URL", avatar_url.startswith("/api/v1/media/"), avatar_url[:60])
+    check("檔名是內容雜湊",
+          bool(re.fullmatch(r"/api/v1/media/[0-9a-f]{64}\.webp", avatar_url)), avatar_url[:90])
+
+    # 圖片本體：不帶 token 也要拿得到（<img> 沒辦法帶 Authorization）
+    path = avatar_url.removeprefix("/api/v1")
+    r = c.get(path)
+    check("未登入也能取得圖片", r.status_code == 200, str(r.status_code))
+    check("回傳 webp", r.headers.get("content-type") == "image/webp",
+          str(r.headers.get("content-type")))
+    check("內容與檔名的雜湊相符",
+          hashlib.sha256(r.content).hexdigest() == avatar_url[14:78], avatar_url[14:78])
+    size = Image.open(io.BytesIO(r.content)).size
+    check("被裁成正方形", size[0] == size[1], str(size))
+    check("設定長期快取", "immutable" in (r.headers.get("cache-control") or ""),
+          str(r.headers.get("cache-control")))
+
+    r2 = c.get(path, headers={"If-None-Match": r.headers.get("etag") or ""})
+    check("瀏覽器已有同一份時回 304", r2.status_code == 304, str(r2.status_code))
+
+    # 同一張圖再上傳一次，應該指到同一個網址（內容定址天然去重）
+    r = c.patch("/users/me", headers=b_tok, json={"avatarUrl": _data_url((40, 90, 200))})
+    check("不同人上傳同一張圖得到同一個網址",
+          r.json().get("avatarUrl") == avatar_url, str(r.json().get("avatarUrl"))[:70])
+
+    check("不存在的圖片回 404", c.get("/media/" + "0" * 64 + ".webp").status_code == 404)
+    check("非法檔名回 404", c.get("/media/not-a-hash.webp").status_code == 404)
+    r = c.patch("/users/me", headers=a_tok,
+                json={"avatarUrl": "data:image/png;base64,bm90YW5pbWFnZQ=="})
+    check("偽裝成圖片的檔案被擋下", r.status_code == 400, str(r.status_code))
+
     print("\n— 登出與 token 撤銷 —")
     # 專門開一個帳號來測，不然後面的測試會因為 token 失效而全掛
     victim = register(c, tag, "logout", "登出測試")
