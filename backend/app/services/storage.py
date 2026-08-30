@@ -112,7 +112,7 @@ async def _put_supabase(digest: str, content_type: str, blob: bytes) -> str | No
                 return _public_url(base, bucket, name)
             if resp.status_code >= 400:
                 log.error("Supabase Storage 回應 %s：%s", resp.status_code, resp.text[:300])
-                _record(str(resp.status_code))
+                _record(f"{resp.status_code} {_reason(resp)}".strip())
                 return None
     except Exception as e:
         log.warning("Supabase Storage 上傳發生例外", exc_info=True)
@@ -139,6 +139,23 @@ async def _ensure_bucket(client: httpx.AsyncClient, base: str, bucket: str, head
             log.info("建立 bucket 回應 %s：%s", resp.status_code, resp.text[:200])
     except Exception:
         log.warning("建立 bucket 失敗，仍嘗試直接上傳", exc_info=True)
+
+
+def _reason(resp: httpx.Response) -> str:
+    """
+    取出 Supabase 錯誤 JSON 裡的簡短代號，例如 "Bucket not found"。
+
+    只取這一個欄位而不是整個回應內文：代號足以判斷方向
+    （bucket 沒建起來？金鑰權限不對？檔名不合法？），
+    而完整內文可能帶上請求細節，不該掛在不需要登入的端點上。
+    """
+    try:
+        data = resp.json()
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("error") or data.get("message") or "")[:60]
 
 
 def _public_url(base: str, bucket: str, name: str) -> str:
