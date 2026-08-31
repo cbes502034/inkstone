@@ -1,3 +1,5 @@
+"""瀏覽器推播需要保存的兩樣東西：使用者的訂閱，與伺服器自己的金鑰。"""
+
 from datetime import datetime
 
 from sqlalchemy import ForeignKey, String, Text

@@ -1,3 +1,13 @@
+"""
+文章，以及掛在文章上的兩樣東西：標籤與讚。
+
+這三張表放同一個檔案，是因為 PostTag 與 PostLike 離開 Post 就沒有意義 ——
+它們不是獨立的概念，而是文章的一部分。反過來說，Comment 雖然也掛在文章上，
+卻放在 social.py，因為留言本身是一個獨立的社交行為，有自己的作者與生命週期。
+
+檔案怎麼切，切的是「概念的邊界」，不是「程式碼的行數」。
+"""
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, ForeignKey, Index, String, Text, UniqueConstraint
@@ -7,6 +17,18 @@ from app.db.base import Base, TimestampMixin, UUIDMixin, UtcDateTime, utcnow
 
 
 class Post(Base, UUIDMixin):
+    """
+    一篇文章。
+
+    注意它繼承 UUIDMixin 但**沒有**繼承 TimestampMixin —— 時間欄位是自己宣告的。
+    因為這裡的 created_at 有特殊規則：編輯文章時它不能被更新，
+    而 TimestampMixin 給的是通用行為。與其硬套再想辦法繞過，不如自己寫清楚。
+
+    body 存的是**原始碼**，含使用者打的自訂語法（反引號、#標籤），
+    不是渲染後的 HTML。存原始碼才改得動、才搜尋得到，
+    也才不會把 XSS 的風險醃進資料庫裡。
+    """
+
     __tablename__ = "posts"
     __table_args__ = (
         # 動態牆固定用 created_at 新到舊，這條索引直接對應那個查詢

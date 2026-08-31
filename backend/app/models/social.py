@@ -1,3 +1,12 @@
+"""
+人與人之間的關係：留言、好友、封鎖、檢舉。
+
+這四件事共通的地方是它們都牽涉到「兩個使用者」，而且都需要防止
+單方面的行為造成傷害 —— 好友要對方同意、封鎖要能真的擋住、
+檢舉不能被拿來當攻擊工具。社群功能的難處從來不是資料表怎麼開，
+而是這些規則想不想得周全。
+"""
+
 import enum
 
 from sqlalchemy import Enum, ForeignKey, Index, String, Text, UniqueConstraint
@@ -7,6 +16,17 @@ from app.db.base import Base, TimestampMixin, UUIDMixin
 
 
 class Comment(Base, UUIDMixin, TimestampMixin):
+    """
+    一則留言。
+
+    刻意做成單層，沒有 parent_id、不支援回覆的回覆。巢狀留言需要遞迴查詢、
+    需要決定展開幾層、需要處理「父留言被刪但子留言還在」——
+    對這個規模的站台，那些複雜度換不到相應的價值。
+
+    索引開在 (post_id, created_at)：讀一篇文章的留言永遠是
+    「這篇的、依時間排」，這條複合索引正好對應那個查詢。
+    """
+
     __tablename__ = "comments"
     __table_args__ = (Index("ix_comments_post_created", "post_id", "created_at"),)
 
@@ -23,6 +43,13 @@ class Comment(Base, UUIDMixin, TimestampMixin):
 
 
 class FriendRequestStatus(str, enum.Enum):
+    """
+    好友邀請的三種狀態。
+
+    繼承 str 是個常見技巧：這樣列舉值本身就是字串，
+    序列化成 JSON 時直接得到 "pending"，不需要額外轉換。
+    """
+
     pending = "pending"
     accepted = "accepted"
     declined = "declined"
@@ -82,6 +109,8 @@ class Block(Base, UUIDMixin, TimestampMixin):
 
 
 class ReportTargetType(str, enum.Enum):
+    """可以被檢舉的三種東西。"""
+
     post = "post"
     comment = "comment"
     user = "user"

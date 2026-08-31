@@ -1,3 +1,5 @@
+"""上傳的圖片。目前只有頭像會用到，但設計上不限用途。"""
+
 from datetime import datetime
 
 from sqlalchemy import Integer, LargeBinary, String

@@ -1,3 +1,10 @@
+"""
+兩種一次性的票證：註冊驗證與重設密碼。
+
+共同的模式值得記住 —— 寄出去的是明碼 token，資料庫裡只留它的雜湊。
+這樣「持有那封信」才等於「有權限」，而讀得到資料庫並不等於。
+"""
+
 from datetime import datetime
 
 from sqlalchemy import ForeignKey, Index, String

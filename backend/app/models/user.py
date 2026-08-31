@@ -1,3 +1,5 @@
+"""使用者。整個系統所有資料的擁有者，其他每張表幾乎都指回這裡。"""
+
 from datetime import datetime
 
 from sqlalchemy import Boolean, Integer, String, Text
@@ -7,6 +9,19 @@ from app.db.base import Base, TimestampMixin, UUIDMixin, UtcDateTime
 
 
 class User(Base, UUIDMixin, TimestampMixin):
+    """
+    一個帳號。
+
+    欄位分成四組看比較清楚：
+      * 身分 —— username / email / password_hash，登入靠這三個
+      * 對外樣貌 —— display_name / bio / avatar_url，別人看到的是這些
+      * 狀態 —— 上線狀態、信箱是否驗證、是否停權
+      * 安全 —— token_generation，決定既有的登入憑證還算不算數
+
+    要特別記住的一點：這張表**不存密碼**，只存 argon2id 的雜湊。
+    雜湊是單向的，就算整個資料庫外洩，攻擊者也無法還原出原始密碼。
+    """
+
     __tablename__ = "users"
 
     # 帳號一經建立不可更改 —— 別人可能已經用 @username 連到這個人
