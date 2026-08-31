@@ -272,6 +272,11 @@ export const chat = {
     return http.get<Conversation>(`/conversations/${id}`)
   },
 
+  /** POST /conversations/{id}/read —— 標記讀到現在為止，冪等 */
+  markRead(conversationId: ID): Promise<void> {
+    return http.post<void>(`/conversations/${conversationId}/read`)
+  },
+
   /** GET /conversations/{id}/messages */
   messages(conversationId: ID): Promise<Message[]> {
     return http.get<Message[]>(`/conversations/${conversationId}/messages`)

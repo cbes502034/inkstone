@@ -110,6 +110,11 @@ export function useRealtime(): void {
             )
             playMessage()
             showNotification(m.sender.displayName, m.body, `/chat/${m.conversationId}`)
+            // 人正在看的那個對話不算未讀 —— 訊息就顯示在他眼前，
+            // 卻同時在側邊欄跳一個紅點，那是很怪的。
+            // ChatRoom 會在同一時間通知伺服器，兩邊的認知才會一致
+            const viewing = window.location.pathname === `/chat/${m.conversationId}`
+
             // 對話列表的最後一則訊息與未讀數也要跟著動
             qc.setQueryData<Conversation[]>(['conversations'], (old) =>
               old
@@ -120,7 +125,7 @@ export function useRealtime(): void {
                             ...c,
                             lastMessage: m,
                             updatedAt: m.createdAt,
-                            unreadCount: c.unreadCount + 1,
+                            unreadCount: viewing ? 0 : c.unreadCount + 1,
                           }
                         : c,
                     )

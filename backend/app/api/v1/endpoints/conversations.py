@@ -210,14 +210,31 @@ async def read_conversation(
     conversation_id: str, db: DbSession, me: CurrentUser
 ) -> ConversationOut:
     conv = await _require_member(db, conversation_id, me.id)
+    return await _conv_out(db, conv, me)
 
-    # 進到對話就當作讀過了
+
+@router.post("/{conversation_id}/read", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_read(conversation_id: str, db: DbSession, me: CurrentUser) -> None:
+    """
+    把這個對話標記為「讀到現在為止」。
+
+    為什麼是獨立的 POST，而不是像原本那樣掛在 GET 對話的副作用裡：
+
+    1. GET 依定義應該是安全的（safe method）—— 不改變伺服器狀態。
+       瀏覽器、快取、預先擷取都是照這個假設在運作的，
+       任何一個對它做 prefetch 的機制都會意外把對話標成已讀。
+
+    2. 真正需要標已讀的時機不只「打開對話」。人已經在對話裡、
+       新訊息即時進來的時候也要標 —— 那個時機並沒有一個 GET 可以搭便車。
+
+    這支是冪等的：呼叫一次跟呼叫十次結果一樣，
+    所以前端可以放心在每次收到新訊息時都打一次。
+    """
+    conv = await _require_member(db, conversation_id, me.id)
     mine = next((m for m in conv.members if m.user_id == me.id), None)
     if mine is not None:
         mine.last_read_at = datetime.now(timezone.utc)
     await db.flush()
-
-    return await _conv_out(db, conv, me)
 
 
 @router.get("/{conversation_id}/messages", response_model=list[MessageOut])

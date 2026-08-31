@@ -12,7 +12,7 @@ import { sendRealtime } from '../lib/realtime'
 import { useTypingIndicator, useTypingSender } from '../lib/typing'
 import { clockTime, dayLabel } from '../lib/time'
 import { useAuth } from '../store/auth'
-import type { Message } from '../types'
+import type { Conversation, Message } from '../types'
 
 export function ChatRoom() {
   const { id = '' } = useParams()
@@ -47,6 +47,26 @@ export function ChatRoom() {
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // 進到對話、以及待在對話裡收到新訊息時，都把已讀位置往前推。
+  //
+  // 這件事一定要讓伺服器知道，不能只改本地快取 —— 未讀是跟著帳號走的，
+  // 只在這台清掉的話，換一台裝置打開又會全部變回未讀。
+  //
+  // 依賴裡放最後一則訊息的 id：人已經在對話裡、新訊息即時進來的時候，
+  // 也要再標一次，否則那一則會被留成未讀。
+  // 這支 API 是冪等的，多打幾次沒有代價。
+  const lastMessageId = messages?.[messages.length - 1]?.id
+  useEffect(() => {
+    if (!id) return
+    void chat.markRead(id).then(() => {
+      // 伺服器已經知道了，順手把列表上的紅點也清掉 ——
+      // 重抓整份對話列表只為了一個數字，是沒必要的往返
+      qc.setQueryData<Conversation[]>(['conversations'], (old) =>
+        old?.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)),
+      )
+    })
+  }, [id, lastMessageId, qc])
 
   const submit = () => {
     const text = draft.trim()

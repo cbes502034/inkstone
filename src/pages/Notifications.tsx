@@ -1,11 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bell, Heart, MessageSquare, UserPlus, Users } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar } from '../components/Avatar'
 import { EmptyState, PageTitle, Skeleton } from '../components/ui'
 import { notifications } from '../lib/api'
 import { relativeTime } from '../lib/time'
-import type { NotificationKind } from '../types'
+import type { AppNotification, NotificationKind } from '../types'
 
 const ICON: Record<NotificationKind, typeof Heart> = {
   post_liked: Heart,
@@ -31,28 +32,40 @@ export function Notifications() {
     queryFn: notifications.list,
   })
 
-  const markRead = useMutation({
-    mutationFn: notifications.markAllRead,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['notifications'] }),
-  })
+  // 這一趟看過哪幾則原本是未讀的。
+  //
+  // 需要記下來，是因為下面會馬上把它們標成已讀 —— 若直接照 n.read 來上色，
+  // 使用者一進頁面，藍底就在同一瞬間全部消失，等於看不出哪幾則是新的。
+  // 記在 ref 而不是 state：它只影響畫面上的樣式，不需要為它重新渲染。
+  const wasUnread = useRef(new Set<string>())
+  for (const n of data ?? []) if (!n.read) wasUnread.current.add(n.id)
 
-  const unread = data?.filter((n) => !n.read).length ?? 0
+  // 進到這一頁就把伺服器上的未讀清掉。
+  //
+  // 原本只有按下「全部標為已讀」才會送出這個請求，於是幾乎沒有人送過 ——
+  // 未讀狀態一直留在資料庫裡。在這台看起來像讀過了（因為你人就在看），
+  // 換一台裝置打開卻整排又是未讀。
+  //
+  // 未讀是跟著帳號走的狀態，不是跟著這台瀏覽器，所以它必須存回伺服器。
+  useEffect(() => {
+    if (!data?.some((n) => !n.read)) return
+    void notifications.markAllRead().then(() => {
+      // 本地直接改，不重抓 —— 這一份資料我們已經有了，
+      // 差別只在那個布林值
+      qc.setQueryData<AppNotification[]>(['notifications'], (old) =>
+        old?.map((n) => (n.read ? n : { ...n, read: true })),
+      )
+    })
+  }, [data, qc])
 
   return (
     <div className="scrim min-h-dvh">
-      <PageTitle
-        title="通知"
-        right={
-          unread > 0 ? (
-            <button
-              onClick={() => markRead.mutate()}
-              className="press text-[13px] text-ink-soft transition-colors hover:text-accent"
-            >
-              全部標為已讀
-            </button>
-          ) : undefined
-        }
-      />
+      {/*
+        原本這裡有一個「全部標為已讀」按鈕。現在進頁面就會自動標記，
+        它已經沒有事情可做 —— 留著一個按了什麼都不會變的按鈕，
+        比沒有按鈕更糟。
+      */}
+      <PageTitle title="通知" />
 
       {isLoading && (
         <div className="flex flex-col gap-5 p-5 sm:p-8">
@@ -80,7 +93,7 @@ export function Notifications() {
             key={n.id}
             to={n.href}
             className={`flex gap-3 border-b border-rule px-5 py-4 transition-colors hover:bg-paper-raised sm:px-8
-              ${n.read ? '' : 'bg-accent-wash/40'}`}
+              ${wasUnread.current.has(n.id) ? 'bg-accent-wash/40' : ''}`}
           >
             <div className="relative shrink-0">
               <Avatar user={n.actor} size={42} />
@@ -98,7 +111,9 @@ export function Notifications() {
               <p className="mt-1 text-[12px] text-ink-faint">{relativeTime(n.createdAt)}</p>
             </div>
 
-            {!n.read && <span className="mt-2 size-2 shrink-0 rounded-full bg-accent" />}
+            {wasUnread.current.has(n.id) && (
+              <span className="mt-2 size-2 shrink-0 rounded-full bg-accent" />
+            )}
           </Link>
         )
       })}
