@@ -699,7 +699,7 @@ export function StarField({
     let dust: HTMLCanvasElement | null = null
     let glows: Glow[] = []
     let constellations: Constellation[] = []
-    let shooting: Shooting | null = null
+    let shootings: Shooting[] = []
     let raf = 0
     let running = true
     let nextShootingAt = performance.now() + 2500 + Math.random() * 4000
@@ -1361,14 +1361,29 @@ export function StarField({
       if (constellations.length < 2) makeConstellation()
     }
 
+    /**
+     * 放一批流星。
+     *
+     * 數量與位置都比照白天的光斑 —— 兩者在畫面上的地位是相對的：
+     * 白天偶爾閃過兩顆光斑，夜裡就該偶爾劃過兩顆流星。
+     * 一顆一顆輪流出現的話，夜晚會比白天冷清。
+     *
+     * 位置整片畫面都可能，不再侷限在左上角那一塊。
+     * 起點稍微往外推一點，讓它是「劃進畫面」而不是「憑空從中間長出來」。
+     */
     function spawnShooting() {
-      shooting = {
-        x: Math.random() * width * 0.85,
-        y: Math.random() * height * 0.55,
-        len: 110 + Math.random() * 140,
-        angle: Math.PI / 6 + Math.random() * 0.3,
-        life: 0,
-        ttl: 750 + Math.random() * 450,
+      shootings = []
+      for (let i = 0; i < 2; i++) {
+        shootings.push({
+          x: width * (-0.05 + Math.random() * 0.9),
+          y: height * (-0.05 + Math.random() * 0.85),
+          len: 110 + Math.random() * 160,
+          // 角度也各自不同，兩顆平行落下會像刮痕不像流星
+          angle: Math.PI / 7 + Math.random() * 0.55,
+          // 錯開一點點，不要兩顆同時憑空出現
+          life: -i * (140 + Math.random() * 320),
+          ttl: 750 + Math.random() * 450,
+        })
       }
     }
 
@@ -1705,40 +1720,43 @@ export function StarField({
 
     function drawShooting(now: number) {
       if (!isDark) return
-      if (!shooting && now >= nextShootingAt) spawnShooting()
-      if (!shooting) return
+      if (shootings.length === 0 && now >= nextShootingAt) spawnShooting()
+      if (shootings.length === 0) return
 
-      shooting.life += 16
-      const t = shooting.life / shooting.ttl
-      if (t >= 1) {
-        shooting = null
-        nextShootingAt = now + 3000 + Math.random() * 6000
-        return
-      }
+      shootings = shootings.filter((sh) => {
+        sh.life += 16
+        if (sh.life < 0) return true // 還沒輪到它
+        const t = sh.life / sh.ttl
+        if (t >= 1) return false
 
-      const fade = Math.sin(Math.PI * t)
-      const travel = t * 380
-      const hx = shooting.x + Math.cos(shooting.angle) * travel
-      const hy = shooting.y + Math.sin(shooting.angle) * travel
-      const tx = hx - Math.cos(shooting.angle) * shooting.len
-      const ty = hy - Math.sin(shooting.angle) * shooting.len
+        const fade = Math.sin(Math.PI * t)
+        const travel = t * 380
+        const hx = sh.x + Math.cos(sh.angle) * travel
+        const hy = sh.y + Math.sin(sh.angle) * travel
+        const tx = hx - Math.cos(sh.angle) * sh.len
+        const ty = hy - Math.sin(sh.angle) * sh.len
 
-      const grad = ctx.createLinearGradient(tx, ty, hx, hy)
-      grad.addColorStop(0, `rgba(${starRGB}, 0)`)
-      grad.addColorStop(1, `rgba(${starRGB}, ${0.9 * fade})`)
+        const grad = ctx.createLinearGradient(tx, ty, hx, hy)
+        grad.addColorStop(0, `rgba(${starRGB}, 0)`)
+        grad.addColorStop(1, `rgba(${starRGB}, ${0.9 * fade})`)
 
-      ctx.beginPath()
-      ctx.strokeStyle = grad
-      ctx.lineWidth = 1.6
-      ctx.lineCap = 'round'
-      ctx.moveTo(tx, ty)
-      ctx.lineTo(hx, hy)
-      ctx.stroke()
+        ctx.beginPath()
+        ctx.strokeStyle = grad
+        ctx.lineWidth = 1.6
+        ctx.lineCap = 'round'
+        ctx.moveTo(tx, ty)
+        ctx.lineTo(hx, hy)
+        ctx.stroke()
 
-      // 頭部帶一點光暈，才像有質量的東西劃過去
-      ctx.globalAlpha = fade * 0.85
-      ctx.drawImage(sprite, hx - 11, hy - 11, 22, 22)
-      ctx.globalAlpha = 1
+        // 頭部帶一點光暈，才像有質量的東西劃過去
+        ctx.globalAlpha = fade * 0.85
+        ctx.drawImage(sprite, hx - 11, hy - 11, 22, 22)
+        ctx.globalAlpha = 1
+        return true
+      })
+
+      // 整批都走完了才排下一批
+      if (shootings.length === 0) nextShootingAt = now + 3000 + Math.random() * 6000
     }
 
     /** 十字星芒 —— 只給最亮的幾顆，畫龍點睛用 */

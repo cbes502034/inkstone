@@ -60,15 +60,53 @@ export function useRealtime(): void {
   const wsRef = useRef<WebSocket | null>(null)
   const attemptRef = useRef(0)
   const timerRef = useRef<number | undefined>(undefined)
-  const closedByUs = useRef(false)
+
+  /**
+   * 最近處理過的事件 id。
+   *
+   * 就算連線本身沒有重疊，網路重送、伺服器重試都可能讓同一則訊息到達兩次。
+   * 而重複的代價是使用者直接看得到的：訊息在畫面上出現兩行、未讀數加兩次。
+   * 這一層很便宜，值得放著。
+   */
+  const seenRef = useRef(new Set<string>())
 
   useEffect(() => {
     if (!isAuthed || !accessToken) return
 
-    closedByUs.current = false
+    /**
+     * 這一輪 effect 是否已經被收掉。
+     *
+     * 必須是區域變數，不能用 ref —— ref 是跨 effect 共用的一格記憶體。
+     * effect 重跑時（access token 每小時續期就會發生）順序是：
+     * 舊連線 close() → 新的 effect 把旗標設回 false → 舊連線的 onclose
+     * 這時才觸發，讀到 false，於是誤判成「意外斷線」再開一條。
+     * 連線就這樣一條一條疊上去，每則訊息被算兩次、三次。
+     *
+     * 區域變數屬於它自己那一輪，舊連線讀到的永遠是舊的那個 true。
+     */
+    let cancelled = false
+    let current: WebSocket | null = null
+
+    /** 同一則只處理一次。回傳 false 代表這是重複的，該直接忽略 */
+    const firstTime = (id: string): boolean => {
+      const seen = seenRef.current
+      if (seen.has(id)) return false
+      seen.add(id)
+      // 不讓它無限成長。這個上限遠大於任何合理的重複窗口
+      if (seen.size > 500) {
+        for (const k of seen) {
+          seen.delete(k)
+          if (seen.size <= 400) break
+        }
+      }
+      return true
+    }
 
     const connect = () => {
+      if (cancelled) return
+
       const ws = new WebSocket(wsUrl(accessToken))
+      current = ws
       wsRef.current = ws
       socket = ws
 
@@ -91,6 +129,7 @@ export function useRealtime(): void {
             break
 
           case 'notification':
+            if (!firstTime(msg.data.id)) break
             // 直接插到清單最前面，不用重新抓
             qc.setQueryData<AppNotification[]>(['notifications'], (old) =>
               old ? [msg.data, ...old] : [msg.data],
@@ -105,10 +144,11 @@ export function useRealtime(): void {
 
           case 'message': {
             const m = msg.data
+            if (!firstTime(m.id)) break
             qc.setQueryData<Message[]>(['messages', m.conversationId], (old) =>
               old ? [...old, m] : [m],
             )
-            playMessage()
+            playMessage(m.conversationId)
             showNotification(m.sender.displayName, m.body, `/chat/${m.conversationId}`)
             // 人正在看的那個對話不算未讀 —— 訊息就顯示在他眼前，
             // 卻同時在側邊欄跳一個紅點，那是很怪的。
@@ -154,9 +194,10 @@ export function useRealtime(): void {
       }
 
       ws.onclose = () => {
-        wsRef.current = null
+        // 只清掉自己。晚到的 onclose 不該把別條連線的參考抹掉
+        if (wsRef.current === ws) wsRef.current = null
         if (socket === ws) socket = null
-        if (closedByUs.current) return
+        if (cancelled) return
 
         // 指數退避重連。網路斷掉或伺服器休眠時，
         // 固定間隔的重連會變成沒有意義的洪水
@@ -187,7 +228,7 @@ export function useRealtime(): void {
      * 但「使用者剛回來」是一個明確的訊號：現在值得馬上試一次。
      */
     const reconnectNow = () => {
-      if (closedByUs.current) return
+      if (cancelled) return
       if (wsRef.current?.readyState === WebSocket.OPEN) return
       if (document.visibilityState !== 'visible') return
 
@@ -202,14 +243,14 @@ export function useRealtime(): void {
     window.addEventListener('focus', reconnectNow)
 
     return () => {
-      closedByUs.current = true
+      cancelled = true
       window.clearTimeout(timerRef.current)
       document.removeEventListener('visibilitychange', reconnectNow)
       window.removeEventListener('online', reconnectNow)
       window.removeEventListener('focus', reconnectNow)
-      wsRef.current?.close()
-      wsRef.current = null
-      socket = null
+      current?.close()
+      if (wsRef.current === current) wsRef.current = null
+      if (socket === current) socket = null
     }
   }, [isAuthed, accessToken, qc])
 }

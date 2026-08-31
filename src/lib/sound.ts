@@ -6,17 +6,31 @@
  *
  * 幾個克制的地方：
  *   - 使用者可以關掉，選擇記在本機
- *   - 分頁在前景而且視窗有焦點時不響 —— 人就在看畫面了，再出聲是打擾
+ *   - 只有在「人正在看的就是這件事本身」時才不響
  *   - 連續事件會合併，一次湧入十則通知不會變成連珠炮
  *   - AudioContext 只在使用者第一次互動後才建立，
  *     瀏覽器本來就會擋掉沒有互動就自動播放的音訊
+ *
+ * 關於第二點，原本的條件是「分頁有焦點就不響」，那是錯的：
+ * 人正在讀動態牆時來了一則訊息，他完全不會知道 —— 而那正是最需要
+ * 提示的時候。真正該安靜的情況只有一種：他看的畫面就是那則訊息本身，
+ * 訊息已經出現在他眼前了，再出聲只是重複。
  */
 
 const MUTE_KEY = 'inkstone.sound.muted'
 const MIN_GAP_MS = 1500
 
 let ctx: AudioContext | null = null
-let lastPlayed = 0
+// 兩種聲音各自計時。共用一個的話，通知與訊息同時到達只會聽到一聲，
+// 而那兩件事該分別讓人知道
+let lastNotification = 0
+let lastMessage = 0
+
+/** 使用者此刻看的畫面是不是就是這件事本身 */
+function looking(at: string): boolean {
+  if (document.visibilityState !== 'visible' || !document.hasFocus()) return false
+  return window.location.pathname === at
+}
 
 export function isMuted(): boolean {
   try {
@@ -66,19 +80,19 @@ function tone(audio: AudioContext, freq: number, startAt: number, duration: numb
 }
 
 /**
- * 播放提示聲。
+ * 播放通知提示聲。
  *
- * @param force 忽略「視窗有焦點就不響」的判斷。測試按鈕用。
+ * @param force 略過所有判斷。設定裡的試聽按鈕用。
  */
 export function playNotification(force = false): void {
   if (isMuted()) return
 
-  // 人正在看畫面就不用出聲提醒
-  if (!force && document.visibilityState === 'visible' && document.hasFocus()) return
+  // 只有人已經停在通知頁上時才安靜 —— 新的那則就在他眼前
+  if (!force && looking('/notifications')) return
 
   const now = Date.now()
-  if (!force && now - lastPlayed < MIN_GAP_MS) return
-  lastPlayed = now
+  if (!force && now - lastNotification < MIN_GAP_MS) return
+  lastNotification = now
 
   const audio = getContext()
   if (!audio) return
@@ -92,14 +106,18 @@ export function playNotification(force = false): void {
   tone(audio, 880.0, t + 0.09, 0.28, 0.11)
 }
 
-/** 訊息用比較低、比較短的聲音，跟通知區分開來 */
-export function playMessage(force = false): void {
+/**
+ * 訊息用比較低、比較短的聲音，跟通知區分開來。
+ *
+ * @param conversationId 這則訊息屬於哪個對話。人正開著那個對話就不出聲。
+ */
+export function playMessage(conversationId?: string, force = false): void {
   if (isMuted()) return
-  if (!force && document.visibilityState === 'visible' && document.hasFocus()) return
+  if (!force && conversationId && looking(`/chat/${conversationId}`)) return
 
   const now = Date.now()
-  if (!force && now - lastPlayed < MIN_GAP_MS) return
-  lastPlayed = now
+  if (!force && now - lastMessage < MIN_GAP_MS) return
+  lastMessage = now
 
   const audio = getContext()
   if (!audio) return
