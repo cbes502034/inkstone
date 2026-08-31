@@ -669,7 +669,6 @@ export function StarField({
     // TypeScript 不會把上面那個 guard 的收斂結果帶進去
     const ctx: CanvasRenderingContext2D = context
 
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const front = layer === 'butterflies'
     const raysOnly = layer === 'rays'
 
@@ -971,8 +970,6 @@ export function StarField({
     }
 
     function drawRays(now: number) {
-      if (reduced) return
-
       if (rays.length === 0 && now >= nextRayAt) {
         spawnRays()
         nextRayAt = now + 3500 + Math.random() * 5000
@@ -1112,7 +1109,7 @@ export function StarField({
 
     function drawClouds() {
       for (const c of clouds) {
-        if (!reduced) c.x += c.speed
+        c.x += c.speed
         // 整朵飄出右側就從左邊繞回來
         if (c.x - 260 > width) c.x = -260
 
@@ -1351,8 +1348,6 @@ export function StarField({
 
     /** 讓星座老去：到期的收掉、放開它的星，再補上新的一組 */
     function ageConstellations() {
-      if (reduced) return
-
       for (let i = constellations.length - 1; i >= 0; i--) {
         const c = constellations[i]
         c.life += 16
@@ -1507,8 +1502,6 @@ export function StarField({
     }
 
     function drawButterflies(now: number) {
-      if (reduced) return
-
       const dark = isDark
 
       // 疊加模式在白底上只會得到白色 —— 白天必須改回一般疊合，
@@ -1711,7 +1704,7 @@ export function StarField({
     }
 
     function drawShooting(now: number) {
-      if (reduced || !isDark) return
+      if (!isDark) return
       if (!shooting && now >= nextShootingAt) spawnShooting()
       if (!shooting) return
 
@@ -1783,7 +1776,6 @@ export function StarField({
      * 而且慢到讓人不會察覺它在動，只覺得天空是活的。
      */
     function skyDrift(now: number): [number, number] {
-      if (reduced) return [0, 0]
       return [
         Math.sin(now * 0.00007) * 14 + Math.sin(now * 0.000041) * 8,
         Math.cos(now * 0.00005) * 9 + Math.sin(now * 0.000033) * 5,
@@ -1857,7 +1849,7 @@ export function StarField({
 
       // 星塵極緩慢地飄，接縫處再貼一張，看不出重複
       if (dust) {
-        if (!reduced) dustOffset = (dustOffset + 0.012) % height
+        dustOffset = (dustOffset + 0.012) % height
         ctx.globalAlpha = 1
         ctx.drawImage(dust, 0, dustOffset, width, height)
         ctx.drawImage(dust, 0, dustOffset - height, width, height)
@@ -1875,7 +1867,7 @@ export function StarField({
         for (const c of constellations) {
           // 很慢地明滅。一直亮著會變成畫在天上的圖表，
           // 若隱若現才像是「剛好看出來的形狀」
-          const breathe = reduced ? 0.7 : 0.55 + 0.28 * Math.sin(now * 0.0004 + c.phase)
+          const breathe = 0.55 + 0.28 * Math.sin(now * 0.0004 + c.phase)
           const born = Math.min(1, c.life / CONST_FADE)
           const gone = Math.min(1, Math.max(0, (c.ttl - c.life) / CONST_FADE))
           const a = 0.5 * breathe * Math.min(born, gone) * baseAlpha
@@ -1907,22 +1899,18 @@ export function StarField({
         // 位置固定不動的話，看久了會發現那只是一張貼圖 ——
         // 汰換讓每次回到這頁看到的夜空都不一樣。
         // 星座用到的星不動，不然連線會跟著跳
-        if (!reduced) {
-          s.life += 16
-          if (s.life >= s.ttl && !s.locked) {
-            glows[i] = makeGlow(true)
-            continue
-          }
+        s.life += 16
+        if (s.life >= s.ttl && !s.locked) {
+          glows[i] = makeGlow(true)
+          continue
         }
 
         // 淡入淡出。啪一聲出現的星星會被眼角捕捉到，很吵
         const born = Math.min(1, s.life / STAR_FADE)
         const gone = s.locked ? 1 : Math.min(1, Math.max(0, (s.ttl - s.life) / STAR_FADE))
-        const envelope = reduced ? 1 : Math.min(born, gone)
+        const envelope = Math.min(born, gone)
 
-        const twinkle = reduced
-          ? 1
-          : 0.6 + 0.4 * Math.sin(now * 0.0011 * s.speed + s.phase)
+        const twinkle = 0.6 + 0.4 * Math.sin(now * 0.0011 * s.speed + s.phase)
         const a = s.alpha * twinkle * baseAlpha * envelope
         if (a <= 0.01) continue
 

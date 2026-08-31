@@ -12,9 +12,8 @@ import { useTheme } from '../lib/theme'
  * 每朵雲由三到五個圓疊成，各自的位移與半徑都不同 —— 只用一個圓
  * 會是個球，要疊起來才有雲那種不規則的邊。
  *
- * 三個克制的地方：
+ * 兩個克制的地方：
  *   只在有精準指標的裝置上出現。觸控螢幕沒有游標，畫了也是殘影。
- *   尊重 prefers-reduced-motion。跟著游標動的東西對前庭敏感的人不友善。
  *   雲散完就停下整個迴圈 —— 沒有東西要畫還一直跑 rAF 是白費電。
  */
 
@@ -56,9 +55,8 @@ export function CursorTrail() {
     if (!el) return
     const canvas: HTMLCanvasElement = el
 
-    // 觸控裝置沒有游標；會動的裝飾對前庭敏感的人也不友善
+    // 觸控裝置沒有游標，畫了也只是殘影
     if (!window.matchMedia('(pointer: fine)').matches) return
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
     const context = canvas.getContext('2d')
     if (!context) return
